@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.env.local
+vault/
+*.jsonl
+fleet_usage.jsonl
+ann_matrix.npy
+ann_labels.json
+.DS_Store
