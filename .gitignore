@@ -11,3 +11,4 @@ fleet_usage.jsonl
 ann_matrix.npy
 ann_labels.json
 .DS_Store
+audit_log.jsonl

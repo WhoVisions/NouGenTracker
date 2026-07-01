@@ -1,0 +1,16 @@
+# NouGenTracker dependencies.
+#
+# The core report (token_tracker.py) is PURE STANDARD LIBRARY — no install
+# needed to run `python token_tracker.py`.
+#
+# Forward-tracking proxy (fleet/fleet_usage_proxy.py) needs:
+requests>=2.28
+
+# Optional — the vendored C4AI token-counter (tokenizer distribution stats).
+# Lazily imported; only needed if you use that feature:
+# transformers>=4.30
+# pandas>=2.0
+
+# Dev/CI:
+pytest>=7.0
+pyflakes>=3.0
