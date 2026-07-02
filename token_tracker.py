@@ -1,165 +1,135 @@
 #!/usr/bin/env python3
-"""Claude Code & Antigravity token tracker.
+"""NouGenTracker — cross-provider token usage monitor.
 
-Aggregates token usage from:
-1. Claude Code JSONL logs under ~/.claude/projects/
-2. Antigravity active sessions queried via internal loopback RPC
-3. Antigravity JSONL logs under ~/.gemini/antigravity/brain/ and ~/.gemini/antigravity-cli/brain/ (fallback/archived)
+Aggregates token usage (input / output / cache-read / reasoning) across every
+AI lane that leaves telemetry on this machine, then renders day tables, an
+honest API-equivalent shadow bill, cache-health scores, and period analytics.
+
+Sources
+-------
+1. Claude Code        JSONL transcripts under ``~/.claude/projects/`` (exact).
+2. Google Antigravity active sessions via the internal loopback RPC (exact)
+                      plus archived ``brain`` transcripts (chars/4 estimate).
+3. OpenAI Codex       ``~/.codex/state_5.sqlite`` threads + rollout JSONL
+                      (exact, per token_count event).
+4. Gemini CLI         ``~/.gemini/tmp/*/chats`` (exact when the log carries a
+                      tokens dict, chars/4 estimate otherwise).
+5. Fleet ledger       append-only JSONL written by ``fleet/fleet_usage_proxy.py``
+                      for local Ollama/Gemma, OpenRouter, and HF lanes (exact).
+
+Importing this module is side-effect free: nothing is scanned and nothing is
+printed until :func:`main` runs. Public helpers (``price_for``, ``model_bill``,
+``resolve_model``, ``parse_ts``, the C4AI token-counter port, …) are importable
+by other tools (e.g. ``hi_token_tracker.py``) without touching ``sys.argv``.
 """
+from __future__ import annotations
+
+import argparse
+import bisect
+import datetime as dtm
 import glob
 import json
+import logging
+import math
 import os
-import sys
-import subprocess
 import re
-import urllib.request
-import ssl
 import sqlite3
+import ssl
+import subprocess
+import sys
+import time
+import urllib.request
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-import datetime as _dtm
+from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
-DAYS = 2
-MONTH = None
-BY_PROVIDER = False
-RANGE_START = None
-RANGE_END = None
-COMPARE_N = None
-LANES = False
+__version__ = "2.0.0"
 
-# argparse CLI: preserves the legacy positional days arg and --month / --by-provider,
-# and adds dynamic ranges (--days/--weeks/--start/--end) + a --compare period diff.
-# Skipped for the --demo-tc subcommand, and when IMPORTED (e.g. hi_token_tracker.py
-# imports this module for its helpers; we must not consume that process's argv or
-# trigger argparse's --help/exit during import).
-if "--demo-tc" not in sys.argv and __name__ == "__main__":
-    import argparse as _ap
+LOG = logging.getLogger("nougentracker")
 
-    _parser = _ap.ArgumentParser(
-        prog="token_tracker.py",
-        formatter_class=_ap.RawDescriptionHelpFormatter,
-        description=(
-            "Cross-provider token usage monitor. Reports input / output / cache-read / "
-            "reasoning tokens by company (Claude Code, Google Antigravity, OpenAI Codex, "
-            "Gemini CLI, + Fleet ledger) and by day, over any range you ask for."
-        ),
-        epilog=(
-            "ranges (most specific wins: --start/--end > --month > --compare > --weeks > --days > positional)\n"
-            "  token_tracker.py                                    last 2 days (default)\n"
-            "  token_tracker.py 7                                  last 7 days (legacy positional)\n"
-            "  token_tracker.py --days 7                           last 7 days\n"
-            "  token_tracker.py --weeks 2                          last 14 days\n"
-            "  token_tracker.py --month 2026-06                    a calendar month\n"
-            "  token_tracker.py --start 2026-06-11 --end 2026-06-18   explicit inclusive range\n"
-            "  token_tracker.py --compare 7                        last 7d vs prior 7d, per company\n"
-            "  token_tracker.py 7 --by-provider                   group the Fleet ledger by provider\n"
-            "\nenv: TOKEN_TRACKER_CUTOFF=<iso8601> overrides the lower bound."
-        ),
-    )
-    _parser.add_argument("days_pos", nargs="?", type=int, default=None,
-                         help="legacy positional: days back from now (default 2)")
-    _parser.add_argument("--days", type=int, default=None, help="days back from now")
-    _parser.add_argument("--weeks", type=int, default=None, help="weeks back from now (7*N days)")
-    _parser.add_argument("--start", metavar="YYYY-MM-DD", default=None,
-                         help="explicit window start, inclusive")
-    _parser.add_argument("--end", metavar="YYYY-MM-DD", default=None,
-                         help="explicit window end, inclusive (default = now)")
-    _parser.add_argument("--month", metavar="YYYY-MM", default=None,
-                         help="restrict the window to a calendar month")
-    _parser.add_argument("--compare", type=int, metavar="N", default=None,
-                         help="compare the last N days vs the prior N days, per company")
-    _parser.add_argument("--lanes", action="store_true",
-                         help="full analytics dashboard: 24h/WTD/MTD/QTD/HTD/YTD comparisons + records (highest day/week/month/streak)")
-    _parser.add_argument("--by-provider", action="store_true",
-                         help="group the Fleet usage ledger rows by provider")
-    _a, _ = _parser.parse_known_args()
+# Token-bucket keys, in canonical order. ``cols()`` returns values in this
+# order minus the reordering quirk kept for backward compatibility below.
+KEYS: Tuple[str, ...] = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "reasoning_tokens",
+)
 
-    MONTH = _a.month
-    BY_PROVIDER = _a.by_provider
-    RANGE_START = _a.start
-    RANGE_END = _a.end
-    COMPARE_N = _a.compare
-    LANES = _a.lanes
+# A per-bucket token tally: bucket key -> token count.
+TokenCounts = Dict[str, int]
 
-    if _a.days is not None:
-        DAYS = _a.days
-    elif _a.weeks is not None:
-        DAYS = _a.weeks * 7
-    elif _a.days_pos is not None:
-        DAYS = _a.days_pos
-
-    # --compare widens the collection window so both periods are gathered (>= 2N days).
-    if COMPARE_N is not None and COMPARE_N > 0:
-        DAYS = max(DAYS, COMPARE_N * 2)
-    if LANES:
-        DAYS = max(DAYS, 760)   # load full available history for the analytics dashboard
+# ---------------------------------------------------------------------------
+# Paths & environment
+# ---------------------------------------------------------------------------
 
 PROJECTS = os.path.expanduser(os.path.join("~", ".claude", "projects"))
 
-ANTIGRAVITY_BRAIN_DIRS = [
+ANTIGRAVITY_BRAIN_DIRS: List[str] = [
     os.path.expanduser(os.path.join("~", ".gemini", "antigravity", "brain")),
     os.path.expanduser(os.path.join("~", ".gemini", "antigravity-cli", "brain")),
     os.path.expanduser(os.path.join("~", ".gemini", "antigravity-ide", "brain")),
-    os.path.expanduser(os.path.join("~", ".gemini", "antigravity-backup", "brain"))
+    os.path.expanduser(os.path.join("~", ".gemini", "antigravity-backup", "brain")),
 ]
 
 CODEX_STATE = os.path.expanduser(os.path.join("~", ".codex", "state_5.sqlite"))
 
-# Fleet usage ledger: forward token accounting for local Ollama/Gemma, OpenRouter,
-# HF and other lanes that otherwise write no token telemetry to disk. Written by
-# fleet_usage_proxy.py + the instrumented fleet clients (see Sol-Ai/).
+# Fleet usage ledger: forward token accounting for local Ollama/Gemma,
+# OpenRouter, HF and other lanes that otherwise write no token telemetry to
+# disk. Written by fleet/fleet_usage_proxy.py + the instrumented fleet clients.
 FLEET_USAGE_LEDGER = os.environ.get(
     "FLEET_USAGE_LEDGER",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault", "fleet_usage.jsonl"),
+    str(Path(__file__).resolve().parent / "vault" / "fleet_usage.jsonl"),
 )
 
-KEYS = ("input_tokens", "output_tokens",
-        "cache_creation_input_tokens", "cache_read_input_tokens", "reasoning_tokens")
+# The Gemini CLI stores conversations under ~/.gemini/tmp/<project>/chats/ as
+# either a single .json file with a messages[] array, or .jsonl one msg/line.
+# These hold message TEXT only — no usageMetadata — so tokens are ESTIMATED
+# via the same chars/4 heuristic the Antigravity fallback uses. This is the
+# ONLY source for pre-May 2026 Gemini activity (the Antigravity brain
+# transcripts only go back to ~2026-05-19).
+GEMINI_CLI_CHAT_GLOBS: List[str] = [
+    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*.json")),
+    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*.jsonl")),
+    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*", "*.jsonl")),
+]
 
-NOW = datetime.now(timezone.utc).astimezone()
+DEFAULT_DAYS = 2
+# --lanes loads the full available history for the analytics dashboard.
+LANES_HISTORY_DAYS = 760
 
-if RANGE_START or RANGE_END:
-    local_tz = datetime.now().astimezone().tzinfo
-    CUTOFF = (
-        datetime.fromisoformat(RANGE_START).replace(tzinfo=local_tz)
-        if RANGE_START else (NOW - timedelta(days=DAYS))
-    )
-    if RANGE_END:
-        # end is inclusive -> extend to the end of that calendar day
-        LIMIT_UPPER = datetime.fromisoformat(RANGE_END).replace(tzinfo=local_tz) + timedelta(days=1)
-    else:
-        try:
-            LIMIT_UPPER = datetime.max.replace(tzinfo=timezone.utc).astimezone()
-        except OSError:
-            LIMIT_UPPER = datetime(3000, 1, 1, tzinfo=timezone.utc).astimezone()
-elif MONTH:
-    try:
-        parts = MONTH.split("-")
-        year = int(parts[0])
-        month = int(parts[1])
-        start_dt = datetime(year, month, 1)
-        if month == 12:
-            end_dt = datetime(year + 1, 1, 1)
-        else:
-            end_dt = datetime(year, month + 1, 1)
-        # Convert to local timezone
-        local_tz = datetime.now().astimezone().tzinfo
-        CUTOFF = start_dt.replace(tzinfo=local_tz)
-        LIMIT_UPPER = end_dt.replace(tzinfo=local_tz)
-    except Exception as e:
-        print(f"Error parsing --month {MONTH}: {e}")
-        sys.exit(1)
-else:
-    cutoff_env = os.environ.get("TOKEN_TRACKER_CUTOFF")
-    CUTOFF = datetime.fromisoformat(cutoff_env) if cutoff_env else (NOW - timedelta(days=DAYS))
-    try:
-        LIMIT_UPPER = datetime.max.replace(tzinfo=timezone.utc).astimezone()
-    except OSError:
-        LIMIT_UPPER = datetime(3000, 1, 1, tzinfo=timezone.utc).astimezone()
+# Estimation heuristic shared by the Antigravity fallback and Gemini CLI
+# parsers: ~4 characters per token, plus a flat per-call context overhead
+# (system prompt, tool schemas) that never appears in the transcript text.
+CHARS_PER_TOKEN = 4
+CONTEXT_OVERHEAD_TOKENS = 6_000
 
-ALL_INVOCATIONS = []
+# Cache-health thresholds (cache-read share of all tokens).
+CACHE_SHARE_EXCELLENT = 0.95
+CACHE_SHARE_GOOD = 0.85
+CACHE_SHARE_WARNING = 0.60
+# Fresh-input volume above which a model/session is flagged, regardless of share.
+INPUT_WARN_THRESHOLD = 250_000
 
-MODEL_MAP = {
+# ---------------------------------------------------------------------------
+# Model catalog
+# ---------------------------------------------------------------------------
+
+MODEL_MAP: Dict[str, str] = {
     'MODEL_PLACEHOLDER_M132': 'gemini-3.5-flash-high',
     'MODEL_PLACEHOLDER_M131': 'gemini-3.5-flash-medium',
     'MODEL_PLACEHOLDER_M130': 'gemini-3.5-flash-low',
@@ -229,7 +199,35 @@ MODEL_MAP = {
     'models/gemini-3.1-flash-live-preview': 'gemini-3.1-flash-live-preview',
 }
 
-def resolve_model(model_id):
+# Antigravity fallback transcripts record model switches as free-text
+# <USER_SETTINGS_CHANGE> blobs. Ordered longest-match-first: the first entry
+# whose every needle appears in the lowercased blob wins.
+_SETTINGS_MODEL_RULES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
+    (("gemini 3.5 flash (high)",), "gemini-3.5-flash-high"),
+    (("gemini 3.5 flash (medium)",), "gemini-3.5-flash-medium"),
+    (("gemini 3.5 flash (low)",), "gemini-3.5-flash-low"),
+    (("gemini 3.5 pro",), "gemini-3.5-pro"),
+    (("gemini 3.5 flash",), "gemini-3.5-flash"),
+    (("gemini 3.1 pro (high)",), "gemini-3.1-pro-high"),
+    (("gemini 3.1 pro (low)",), "gemini-3.1-pro-low"),
+    (("claude sonnet 4.6",), "claude-sonnet-4-6-thinking"),
+    (("claude opus 4.6",), "claude-opus-4-6-thinking"),
+    (("gpt-5.6 sol", "gpt 5.6 sol"), "gpt-5.6-sol"),
+    (("gpt-5.6 terra", "gpt 5.6 terra"), "gpt-5.6-terra"),
+    (("gpt-5.6 luna", "gpt 5.6 luna"), "gpt-5.6-luna"),
+    (("gpt-oss 120b", "gpt-oss 128b"), "gpt-oss-120b-medium"),
+    (("gemini 3 flash",), "gemini-3-flash-preview"),
+    (("gemini 3",), "gemini-3-flash-preview"),
+)
+
+_SETTINGS_CHANGE_RE = re.compile(
+    r"<USER_SETTINGS_CHANGE>\s*The user changed setting `Model Selection` "
+    r"from .*? to (.*?)(?:\.\s|\.$|$)"
+)
+
+
+def resolve_model(model_id: Optional[str]) -> str:
+    """Map a raw provider model id to its canonical display name."""
     if not model_id:
         return "unknown"
     if model_id.startswith("models/"):
@@ -242,79 +240,104 @@ def resolve_model(model_id):
     return model_id
 
 
-# --- Per-model pricing (USD per million tokens) -----------------------------
-# Tuple = (input, output, cache_read, source). reasoning bills at the output
-# rate; cache_creation bills at 1.25x input (the 5-minute cache-write tier).
-#
-# Claude rates are first-party list prices from claude.com/pricing.
-# Everything tagged EST is an ESTIMATE with no first-party source wired in —
-# treat those as tunable knobs, not ground truth, and correct them as real
-# invoices arrive. The point of this table is an HONEST reference bill, not an
-# impressive one: cache-reads are priced as cache-reads, not as fresh input.
+def _model_from_settings_change(content: str) -> Optional[str]:
+    """Extract the newly-selected model from a settings-change blob, if any."""
+    match = _SETTINGS_CHANGE_RE.search(content)
+    if not match:
+        return None
+    candidate = match.group(1).strip()
+    lowered = candidate.lower()
+    for needles, model in _SETTINGS_MODEL_RULES:
+        if any(needle in lowered for needle in needles):
+            return model
+    return candidate
+
+
+# ---------------------------------------------------------------------------
+# Pricing
+# ---------------------------------------------------------------------------
+
 DOC = "doc"   # first-party documented list price (any vendor)
-EST = "est"
-MODEL_PRICING = {
+EST = "est"   # estimate with no first-party source wired in
+
+
+class Pricing(NamedTuple):
+    """USD per million tokens. Reasoning bills at the output rate;
+    cache-creation bills at 1.25x input (the 5-minute cache-write tier)."""
+
+    input: float
+    output: float
+    cache_read: float
+    source: str
+
+
+# Claude rates are first-party list prices from claude.com/pricing.
+# Everything tagged EST is an ESTIMATE — treat those as tunable knobs, not
+# ground truth, and correct them as real invoices arrive. The point of this
+# table is an HONEST reference bill, not an impressive one: cache-reads are
+# priced as cache-reads, not as fresh input.
+MODEL_PRICING: Dict[str, Pricing] = {
     # ---- Claude: first-party list prices ----
-    "claude-fable-5":             (10.00, 50.00, 1.000, DOC),
-    "claude-opus-4-8":            (5.00, 25.00, 0.500, DOC),
-    "claude-opus-4-7":            (5.00, 25.00, 0.500, DOC),
-    "claude-opus-4-6":            (5.00, 25.00, 0.500, DOC),
-    "claude-opus-4-6-thinking":   (5.00, 25.00, 0.500, DOC),
-    "claude-opus-4-5":            (5.00, 25.00, 0.500, DOC),
-    "claude-opus-4-5-thinking":   (5.00, 25.00, 0.500, DOC),
-    "claude-sonnet-4-6":          (3.00, 15.00, 0.300, DOC),
-    "claude-sonnet-4-6-thinking": (3.00, 15.00, 0.300, DOC),
-    "claude-sonnet-4-5":          (3.00, 15.00, 0.300, DOC),
-    "claude-sonnet-4-5-20250929": (3.00, 15.00, 0.300, DOC),
-    "claude-sonnet-4-5-thinking": (3.00, 15.00, 0.300, DOC),
-    "claude-haiku-4-5":           (1.00, 5.00, 0.100, DOC),
+    "claude-fable-5":             Pricing(10.00, 50.00, 1.000, DOC),
+    "claude-opus-4-8":            Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-opus-4-7":            Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-opus-4-6":            Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-opus-4-6-thinking":   Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-opus-4-5":            Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-opus-4-5-thinking":   Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-sonnet-4-6":          Pricing(3.00, 15.00, 0.300, DOC),
+    "claude-sonnet-4-6-thinking": Pricing(3.00, 15.00, 0.300, DOC),
+    "claude-sonnet-4-5":          Pricing(3.00, 15.00, 0.300, DOC),
+    "claude-sonnet-4-5-20250929": Pricing(3.00, 15.00, 0.300, DOC),
+    "claude-sonnet-4-5-thinking": Pricing(3.00, 15.00, 0.300, DOC),
+    "claude-haiku-4-5":           Pricing(1.00, 5.00, 0.100, DOC),
     # ---- Gemini: first-party list prices (ai.google.dev/gemini-api/docs/pricing) ----
     # Flash thinking tiers (high/medium/low) share one standard price.
-    "gemini-3.5-flash-high":      (1.50, 9.00, 0.15, DOC),
-    "gemini-3.5-flash-medium":    (1.50, 9.00, 0.15, DOC),
-    "gemini-3.5-flash-low":       (1.50, 9.00, 0.15, DOC),
-    "gemini-3.5-pro":             (2.00, 12.00, 0.20, DOC),
-    "gemini-3.5-pro-preview":     (2.00, 12.00, 0.20, EST),
-    "gemini-3.5-flash":           (1.50, 9.00, 0.15, DOC),
-    "gemini-3.5-flash-preview":   (1.50, 9.00, 0.15, EST),
+    "gemini-3.5-flash-high":      Pricing(1.50, 9.00, 0.15, DOC),
+    "gemini-3.5-flash-medium":    Pricing(1.50, 9.00, 0.15, DOC),
+    "gemini-3.5-flash-low":       Pricing(1.50, 9.00, 0.15, DOC),
+    "gemini-3.5-pro":             Pricing(2.00, 12.00, 0.20, DOC),
+    "gemini-3.5-pro-preview":     Pricing(2.00, 12.00, 0.20, EST),
+    "gemini-3.5-flash":           Pricing(1.50, 9.00, 0.15, DOC),
+    "gemini-3.5-flash-preview":   Pricing(1.50, 9.00, 0.15, EST),
     # Gemini 3.1 Pro standard, <=200k-token prompt tier.
-    "gemini-3.1-pro-high":        (2.00, 12.00, 0.20, DOC),
-    "gemini-3.1-pro-low":         (2.00, 12.00, 0.20, DOC),
+    "gemini-3.1-pro-high":        Pricing(2.00, 12.00, 0.20, DOC),
+    "gemini-3.1-pro-low":         Pricing(2.00, 12.00, 0.20, DOC),
     # Gemini 3 Flash Preview standard (the actual heavy Antigravity model).
-    "gemini-3-flash-preview":     (0.50, 3.00, 0.05, DOC),
-    "gemini-3-flash":             (0.50, 3.00, 0.05, DOC),
+    "gemini-3-flash-preview":     Pricing(0.50, 3.00, 0.05, DOC),
+    "gemini-3-flash":             Pricing(0.50, 3.00, 0.05, DOC),
     # ---- Gemini CLI models (seen in ~/.gemini/tmp/*/chats logs) ----
     # 3.1 Pro preview shares the documented 3.1-pro standard tier.
-    "gemini-3.1-pro-preview":     (2.00, 12.00, 0.20, DOC),
-    "gemini-3.1-pro-preview-customtools": (2.00, 12.00, 0.20, DOC),
+    "gemini-3.1-pro-preview":     Pricing(2.00, 12.00, 0.20, DOC),
+    "gemini-3.1-pro-preview-customtools": Pricing(2.00, 12.00, 0.20, DOC),
     # 3 Pro preview: no first-party row wired in yet -> estimate at pro tier.
-    "gemini-3-pro-preview":       (2.00, 12.00, 0.20, EST),
+    "gemini-3-pro-preview":       Pricing(2.00, 12.00, 0.20, EST),
     # 2.5 family: first-party list prices (<=200k tier).
-    "gemini-2.5-pro":             (1.25, 10.00, 0.31, DOC),
-    "gemini-2.5-flash":           (0.30, 2.50, 0.075, DOC),
+    "gemini-2.5-pro":             Pricing(1.25, 10.00, 0.31, DOC),
+    "gemini-2.5-flash":           Pricing(0.30, 2.50, 0.075, DOC),
     # 2.0 family: first-party list prices
-    "gemini-2.0-flash":           (0.075, 0.30, 0.01875, DOC),
-    "gemini-2.0-flash-lite":      (0.0375, 0.15, 0.009375, DOC),
-    "gemini-2.0-pro":             (0.80, 3.20, 0.20, DOC),
+    "gemini-2.0-flash":           Pricing(0.075, 0.30, 0.01875, DOC),
+    "gemini-2.0-flash-lite":      Pricing(0.0375, 0.15, 0.009375, DOC),
+    "gemini-2.0-pro":             Pricing(0.80, 3.20, 0.20, DOC),
     # Flash-lite tiers: estimate, no first-party row confirmed here.
-    "gemini-3.1-flash-lite":          (0.10, 0.40, 0.01, EST),
-    "gemini-3.1-flash-lite-preview":  (0.10, 0.40, 0.01, EST),
+    "gemini-3.1-flash-lite":          Pricing(0.10, 0.40, 0.01, EST),
+    "gemini-3.1-flash-lite-preview":  Pricing(0.10, 0.40, 0.01, EST),
     # ---- OpenAI: first-party list prices (cached input -> cache_read) ----
-    "gpt-5.6-sol-ultra":          (5.00, 30.00, 0.50, DOC),
-    "gpt-5.6-sol":                (5.00, 30.00, 0.50, DOC),
-    "gpt-5.6-terra":              (2.50, 15.00, 0.25, DOC),
-    "gpt-5.6-luna":               (1.00, 6.00, 0.10, DOC),
-    "gpt-5.5":                    (5.00, 30.00, 0.50, DOC),
-    "gpt-5.4":                    (2.50, 15.00, 0.25, DOC),
-    "gpt-5.4-mini":               (0.75, 4.50, 0.075, DOC),
-    "gpt-5-codex-mini":           (0.75, 4.50, 0.075, EST),
-    "gpt-5.1-codex-mini":         (0.75, 4.50, 0.075, EST),
+    "gpt-5.6-sol-ultra":          Pricing(5.00, 30.00, 0.50, DOC),
+    "gpt-5.6-sol":                Pricing(5.00, 30.00, 0.50, DOC),
+    "gpt-5.6-terra":              Pricing(2.50, 15.00, 0.25, DOC),
+    "gpt-5.6-luna":               Pricing(1.00, 6.00, 0.10, DOC),
+    "gpt-5.5":                    Pricing(5.00, 30.00, 0.50, DOC),
+    "gpt-5.4":                    Pricing(2.50, 15.00, 0.25, DOC),
+    "gpt-5.4-mini":               Pricing(0.75, 4.50, 0.075, DOC),
+    "gpt-5-codex-mini":           Pricing(0.75, 4.50, 0.075, EST),
+    "gpt-5.1-codex-mini":         Pricing(0.75, 4.50, 0.075, EST),
     # gpt-oss is open-weights; Dave runs it free via OpenRouter/local. Nominal host est.
-    "gpt-oss-120b-medium":        (0.10, 0.40, 0.010, EST),
+    "gpt-oss-120b-medium":        Pricing(0.10, 0.40, 0.010, EST),
 }
-# Unknown model: conservative estimate so the bill never silently reads $0.
-DEFAULT_PRICING = (1.00, 4.00, 0.100, EST)
 
+# Unknown model: conservative estimate so the bill never silently reads $0.
+DEFAULT_PRICING = Pricing(1.00, 4.00, 0.100, EST)
 
 # Local Ollama/Gemma models and OpenRouter ':free' routes cost $0 — they are
 # tracked for VOLUME, not spend (the fleet enforces a hard-free policy).
@@ -323,37 +346,186 @@ FREE_LOCAL_MODELS = {
     "gemma4-aggressive:e4b", "gemma4-aggressive:e2b", "gemma2:2b", "gemma:2b",
 }
 
+FREE_PRICING = Pricing(0.0, 0.0, 0.0, DOC)
 
-def price_for(model_name):
-    """Resolve (input, output, cache_read, source) for a model, ignoring the
-    ' (estimated)' suffix the Antigravity fallback parser appends."""
-    key = (model_name or "").replace(" (estimated)", "").strip()
+ESTIMATED_SUFFIX = " (estimated)"
+
+
+def price_for(model_name: Optional[str]) -> Pricing:
+    """Resolve pricing for a model, ignoring the ' (estimated)' suffix the
+    Antigravity fallback parser appends."""
+    key = (model_name or "").replace(ESTIMATED_SUFFIX, "").strip()
     # Free lanes: local Ollama/Gemma + OpenRouter ':free' routes.
     if key.endswith(":free") or key in FREE_LOCAL_MODELS:
-        return (0.0, 0.0, 0.0, DOC)
+        return FREE_PRICING
     return MODEL_PRICING.get(key, DEFAULT_PRICING)
 
 
-def model_bill(model_name, d):
+def model_bill(model_name: Optional[str], d: Mapping[str, int]) -> Tuple[float, str]:
     """Honest API-equivalent cost (USD) for one model's token bucket.
 
     Cache-reads are billed at their discounted rate, cache-creation at 1.25x
     input, and reasoning at the output rate — the way a real invoice prices
     them. Returns (cost_usd, source_tag).
     """
-    inp, out, cache_read, src = price_for(model_name)
+    pricing = price_for(model_name)
     cost = (
-        d.get("input_tokens", 0) * inp
-        + d.get("cache_creation_input_tokens", 0) * inp * 1.25
-        + d.get("cache_read_input_tokens", 0) * cache_read
-        + (d.get("output_tokens", 0) + d.get("reasoning_tokens", 0)) * out
+        d.get("input_tokens", 0) * pricing.input
+        + d.get("cache_creation_input_tokens", 0) * pricing.input * 1.25
+        + d.get("cache_read_input_tokens", 0) * pricing.cache_read
+        + (d.get("output_tokens", 0) + d.get("reasoning_tokens", 0)) * pricing.output
     ) / 1_000_000
-    return cost, src
+    return cost, pricing.source
 
-def parse_ts(rec):
+
+# ---------------------------------------------------------------------------
+# Time window
+# ---------------------------------------------------------------------------
+
+def _far_future() -> datetime:
+    """A timezone-aware 'no upper bound' sentinel that survives Windows'
+    OSError on datetime.max.astimezone()."""
+    try:
+        return datetime.max.replace(tzinfo=timezone.utc).astimezone()
+    except OSError:
+        return datetime(3000, 1, 1, tzinfo=timezone.utc).astimezone()
+
+
+@dataclass(frozen=True)
+class Window:
+    """The inclusive-lower / exclusive-upper report window, plus 'now'."""
+
+    cutoff: datetime
+    limit_upper: datetime
+    now: datetime
+    days: int = DEFAULT_DAYS
+
+    def contains(self, ts: datetime) -> bool:
+        return self.cutoff <= ts <= self.limit_upper
+
+    @classmethod
+    def last_days(cls, days: int, now: Optional[datetime] = None) -> "Window":
+        now = now or datetime.now(timezone.utc).astimezone()
+        cutoff_env = os.environ.get("TOKEN_TRACKER_CUTOFF")
+        cutoff = (
+            datetime.fromisoformat(cutoff_env)
+            if cutoff_env else now - timedelta(days=days)
+        )
+        return cls(cutoff=cutoff, limit_upper=_far_future(), now=now, days=days)
+
+    @classmethod
+    def from_range(
+        cls,
+        start: Optional[str],
+        end: Optional[str],
+        days: int,
+        now: Optional[datetime] = None,
+    ) -> "Window":
+        """Explicit --start/--end range; both bounds inclusive by calendar day."""
+        now = now or datetime.now(timezone.utc).astimezone()
+        local_tz = datetime.now().astimezone().tzinfo
+        cutoff = (
+            datetime.fromisoformat(start).replace(tzinfo=local_tz)
+            if start else now - timedelta(days=days)
+        )
+        if end:
+            # end is inclusive -> extend to the end of that calendar day
+            limit_upper = (
+                datetime.fromisoformat(end).replace(tzinfo=local_tz)
+                + timedelta(days=1)
+            )
+        else:
+            limit_upper = _far_future()
+        return cls(cutoff=cutoff, limit_upper=limit_upper, now=now, days=days)
+
+    @classmethod
+    def from_month(cls, month: str, now: Optional[datetime] = None) -> "Window":
+        """A calendar month given as YYYY-MM."""
+        now = now or datetime.now(timezone.utc).astimezone()
+        year_s, month_s = month.split("-")[:2]
+        year, mon = int(year_s), int(month_s)
+        start_dt = datetime(year, mon, 1)
+        end_dt = datetime(year + 1, 1, 1) if mon == 12 else datetime(year, mon + 1, 1)
+        local_tz = datetime.now().astimezone().tzinfo
+        return cls(
+            cutoff=start_dt.replace(tzinfo=local_tz),
+            limit_upper=end_dt.replace(tzinfo=local_tz),
+            now=now,
+        )
+
+
+def default_window() -> Window:
+    """The window used when parsers are called without one (library use)."""
+    return Window.last_days(DEFAULT_DAYS)
+
+
+# ---------------------------------------------------------------------------
+# Records & aggregation
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Invocation:
+    """One model call's token usage, normalized across every source."""
+
+    timestamp: datetime
+    source: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation: int = 0
+    cache_read: int = 0
+    reasoning: int = 0
+    exact: bool = True
+    session_id: str = "unknown"
+    source_file: str = ""
+
+    @property
+    def total_tokens(self) -> int:
+        return (self.input_tokens + self.output_tokens + self.cache_creation
+                + self.cache_read + self.reasoning)
+
+    def billing_bucket(self) -> TokenCounts:
+        """This invocation's tokens keyed the way ``model_bill`` expects."""
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_creation_input_tokens": self.cache_creation,
+            "cache_read_input_tokens": self.cache_read,
+            "reasoning_tokens": self.reasoning,
+        }
+
+
+class UsageAggregate:
+    """Accumulates invocations into per-day / per-model / total buckets."""
+
+    def __init__(self) -> None:
+        self.by_day: Dict[str, TokenCounts] = defaultdict(lambda: defaultdict(int))
+        self.by_model: Dict[str, TokenCounts] = defaultdict(lambda: defaultdict(int))
+        self.totals: TokenCounts = defaultdict(int)
+        self.invocations: List[Invocation] = []
+
+    def add(self, inv: Invocation) -> None:
+        day = inv.timestamp.strftime("%Y-%m-%d")
+        for key, value in inv.billing_bucket().items():
+            self.by_day[day][key] += value
+            self.by_model[inv.model][key] += value
+            self.totals[key] += value
+        self.invocations.append(inv)
+
+    def __len__(self) -> int:
+        return len(self.invocations)
+
+
+# ---------------------------------------------------------------------------
+# Shared parsing helpers
+# ---------------------------------------------------------------------------
+
+def parse_ts(rec: Any) -> Optional[datetime]:
+    """Best-effort timestamp from a record's common timestamp fields."""
     if not rec or not isinstance(rec, dict):
         return None
-    ts = rec.get("timestamp") or rec.get("created_at") or rec.get("startTime") or rec.get("start_time")
+    ts = (rec.get("timestamp") or rec.get("created_at")
+          or rec.get("startTime") or rec.get("start_time"))
     if not ts:
         return None
     try:
@@ -361,121 +533,185 @@ def parse_ts(rec):
     except (ValueError, AttributeError):
         return None
 
-def usage_of(rec):
+
+def usage_of(rec: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract the usage dict from a Claude Code record (message- or top-level)."""
     msg = rec.get("message")
     u = msg.get("usage") if isinstance(msg, dict) else None
     if u is None:
         u = rec.get("usage")
     return u if isinstance(u, dict) else None
 
-def model_of(rec):
+
+def model_of(rec: Mapping[str, Any]) -> str:
     msg = rec.get("message")
     if isinstance(msg, dict) and msg.get("model"):
         return msg["model"]
     return rec.get("model") or "unknown"
 
-def fmt(n):
+
+def fmt(n: int) -> str:
     return f"{n:,}"
 
-def cols(d):
-    return (d["input_tokens"], d["output_tokens"],
-            d["cache_creation_input_tokens"], d["cache_read_input_tokens"], d["reasoning_tokens"])
 
-# --- Parse Claude Code Logs ---
-def parse_claude():
+def cols(d: Mapping[str, int]) -> Tuple[int, int, int, int, int]:
+    """(input, output, cache_creation, cache_read, reasoning) from a bucket."""
+    return (d["input_tokens"], d["output_tokens"],
+            d["cache_creation_input_tokens"], d["cache_read_input_tokens"],
+            d["reasoning_tokens"])
+
+
+def _iter_jsonl(path: str) -> Iterator[Dict[str, Any]]:
+    """Yield parsed JSON objects from a JSONL file, skipping bad lines."""
+    try:
+        fh = open(path, encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        LOG.debug("cannot open %s: %s", path, exc)
+        return
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+# ---------------------------------------------------------------------------
+# Source: Claude Code
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ClaudeScan:
+    usage: UsageAggregate
+    files_scanned: int = 0
+    records: int = 0
+
+
+def parse_claude(window: Optional[Window] = None) -> ClaudeScan:
+    """Scan ~/.claude/projects JSONL transcripts (exact usage records)."""
+    window = window or default_window()
+    scan = ClaudeScan(usage=UsageAggregate())
     files = glob.glob(os.path.join(PROJECTS, "**", "*.jsonl"), recursive=True)
-    by_day = defaultdict(lambda: defaultdict(int))
-    by_model = defaultdict(lambda: defaultdict(int))
-    totals = defaultdict(int)
-    records = 0
-    seen = set()
+    scan.files_scanned = len(files)
+    seen: set = set()
 
     for f in files:
-        try:
-            fh = open(f, encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        with fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
+        for rec in _iter_jsonl(f):
+            u = usage_of(rec)
+            if not u:
+                continue
+            ts = parse_ts(rec)
+            if ts is None or not window.contains(ts):
+                continue
+            uid = rec.get("uuid")
+            if uid is not None:
+                if uid in seen:
                     continue
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                u = usage_of(rec)
-                if not u:
-                    continue
-                ts = parse_ts(rec)
-                if ts is None or ts < CUTOFF or ts > LIMIT_UPPER:
-                    continue
-                uid = rec.get("uuid")
-                if uid is not None:
-                    if uid in seen:
-                        continue
-                    seen.add(uid)
-                day = ts.strftime("%Y-%m-%d")
-                model = model_of(rec)
-                for k in KEYS:
-                    v = int(u.get(k) or 0)
-                    by_day[day][k] += v
-                    by_model[model][k] += v
-                    totals[k] += v
-                
-                it = int(u.get("input_tokens") or 0)
-                ot = int(u.get("output_tokens") or 0)
-                cc = int(u.get("cache_creation_input_tokens") or 0)
-                cr = int(u.get("cache_read_input_tokens") or 0)
-                rt = int(u.get("reasoning_tokens") or 0)
-                
-                ALL_INVOCATIONS.append({
-                    "timestamp": ts,
-                    "source": "Claude Code",
-                    "model": model,
-                    "input_tokens": it,
-                    "output_tokens": ot,
-                    "cache_creation": cc,
-                    "cache_read": cr,
-                    "reasoning": rt,
-                    "exact": True,
-                    "session_id": rec.get("project_name") or (f.split(os.sep)[-2] if len(f.split(os.sep)) >= 2 else "unknown_project"),
-                    "source_file": os.path.basename(f)
-                })
-                records += 1
-    return by_day, by_model, totals, len(files), records
+                seen.add(uid)
+            path_parts = f.split(os.sep)
+            session = (rec.get("project_name")
+                       or (path_parts[-2] if len(path_parts) >= 2 else "unknown_project"))
+            scan.usage.add(Invocation(
+                timestamp=ts,
+                source="Claude Code",
+                model=model_of(rec),
+                input_tokens=int(u.get("input_tokens") or 0),
+                output_tokens=int(u.get("output_tokens") or 0),
+                cache_creation=int(u.get("cache_creation_input_tokens") or 0),
+                cache_read=int(u.get("cache_read_input_tokens") or 0),
+                reasoning=int(u.get("reasoning_tokens") or 0),
+                exact=True,
+                session_id=session,
+                source_file=os.path.basename(f),
+            ))
+            scan.records += 1
+    return scan
 
-# --- RPC Locator ---
-def locate_antigravity_rpc():
-    candidates = []
-    # 1. WMIC process detection
+
+# ---------------------------------------------------------------------------
+# Source: Google Antigravity (loopback RPC + archived transcripts)
+# ---------------------------------------------------------------------------
+
+def _insecure_loopback_ctx() -> ssl.SSLContext:
+    """TLS context for the Antigravity language server's self-signed loopback
+    cert. Verification is intentionally disabled: the endpoint is 127.0.0.1
+    and authenticated by the process-local CSRF token instead."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _rpc_post(
+    port: int,
+    token: str,
+    method: str,
+    payload: Mapping[str, Any],
+    ctx: ssl.SSLContext,
+    timeout: float,
+) -> Optional[Dict[str, Any]]:
+    """POST one Connect-protocol RPC to the local language server."""
+    url = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/{method}"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(dict(payload)).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Connect-Protocol-Version": "1",
+            "X-Codeium-Csrf-Token": token,
+        },
+        method="POST",
+    )
     try:
-        cmd = 'wmic process get ProcessId,CommandLine /FORMAT:CSV'
-        output = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
+        with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        LOG.debug("RPC %s on port %s failed: %s", method, port, exc)
+        return None
+
+
+def _find_language_server_candidates() -> List[Dict[str, Any]]:
+    """Locate running Antigravity language_server processes + CSRF tokens."""
+    candidates: List[Dict[str, Any]] = []
+    # 1. WMIC process detection (fast path; deprecated but still present)
+    try:
+        output = subprocess.check_output(
+            "wmic process get ProcessId,CommandLine /FORMAT:CSV",
+            shell=True,
+        ).decode("utf-8", errors="ignore")
         for line in output.splitlines():
             line = line.strip()
             if not line or "wmic" in line:
                 continue
             if "language_server" in line.lower() and "--csrf_token" in line:
-                parts = line.split(',')
-                if len(parts) >= 3:
-                    pid_str = parts[-1].strip()
-                    cmd_line = ",".join(parts[1:-1])
-                    try:
-                        pid = int(pid_str)
-                    except ValueError:
-                        continue
-                    token_match = re.search(r'--csrf_token\s+([a-f0-9-]+)', cmd_line)
-                    if token_match:
-                        candidates.append({"pid": pid, "token": token_match.group(1)})
-    except Exception:
-        pass
+                parts = line.split(",")
+                if len(parts) < 3:
+                    continue
+                try:
+                    pid = int(parts[-1].strip())
+                except ValueError:
+                    continue
+                cmd_line = ",".join(parts[1:-1])
+                token_match = re.search(r"--csrf_token\s+([a-f0-9-]+)", cmd_line)
+                if token_match:
+                    candidates.append({"pid": pid, "token": token_match.group(1)})
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOG.debug("wmic process scan failed: %s", exc)
 
     # 2. PowerShell fallback process detection
     if not candidates:
         try:
-            cmd = 'powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*language_server*\' } | Select-Object ProcessId, CommandLine | ConvertTo-Json"'
-            output = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
+            output = subprocess.check_output(
+                'powershell -Command "Get-CimInstance Win32_Process | '
+                "Where-Object { $_.CommandLine -like '*language_server*' } | "
+                'Select-Object ProcessId, CommandLine | ConvertTo-Json"',
+                shell=True,
+            ).decode("utf-8", errors="ignore")
             if output.strip():
                 data = json.loads(output)
                 if isinstance(data, dict):
@@ -483,435 +719,323 @@ def locate_antigravity_rpc():
                 for p in data:
                     pid = p.get("ProcessId")
                     cmd_line = p.get("CommandLine") or ""
-                    token_match = re.search(r'--csrf_token\s+([a-f0-9-]+)', cmd_line)
+                    token_match = re.search(r"--csrf_token\s+([a-f0-9-]+)", cmd_line)
                     if pid and token_match:
                         candidates.append({"pid": pid, "token": token_match.group(1)})
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            LOG.debug("powershell process scan failed: %s", exc)
+    return candidates
 
-    verified_conns = []
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
 
-    for cand in candidates:
-        pid = cand["pid"]
-        token = cand["token"]
-        ports = []
-        try:
-            output = subprocess.check_output("netstat -ano", shell=True).decode('utf-8', errors='ignore')
-            for line in output.splitlines():
-                if "LISTENING" in line and str(pid) in line.split()[-1]:
-                    parts = line.split()
-                    port_match = re.search(r':(\d+)$', parts[1])
-                    if port_match:
-                        ports.append(int(port_match.group(1)))
-        except Exception:
-            pass
-            
-        for port in set(ports):
-            url = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/Heartbeat"
-            req = urllib.request.Request(
-                url,
-                data=json.dumps({"uuid": "00000000-0000-0000-0000-000000000000"}).encode('utf-8'),
-                headers={
-                    "Content-Type": "application/json",
-                    "Connect-Protocol-Version": "1",
-                    "X-Codeium-Csrf-Token": token
-                },
-                method="POST"
+def _listening_ports_for_pid(pid: int) -> List[int]:
+    ports: List[int] = []
+    try:
+        output = subprocess.check_output("netstat -ano", shell=True).decode(
+            "utf-8", errors="ignore")
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOG.debug("netstat failed: %s", exc)
+        return ports
+    for line in output.splitlines():
+        parts = line.split()
+        if "LISTENING" not in line or not parts:
+            continue
+        if parts[-1] != str(pid):
+            continue
+        port_match = re.search(r":(\d+)$", parts[1])
+        if port_match:
+            ports.append(int(port_match.group(1)))
+    return ports
+
+
+def locate_antigravity_rpc() -> List[Tuple[int, str]]:
+    """Find live, heartbeat-verified (port, csrf_token) RPC connections."""
+    verified: List[Tuple[int, str]] = []
+    ctx = _insecure_loopback_ctx()
+    for cand in _find_language_server_candidates():
+        for port in set(_listening_ports_for_pid(cand["pid"])):
+            resp = _rpc_post(
+                port, cand["token"], "Heartbeat",
+                {"uuid": "00000000-0000-0000-0000-000000000000"},
+                ctx, timeout=1.5,
             )
-            try:
-                with urllib.request.urlopen(req, context=ctx, timeout=1.5) as resp:
-                    if resp.status == 200:
-                        verified_conns.append((port, token))
-            except Exception:
-                pass
-    return verified_conns
+            if resp is not None:
+                verified.append((port, cand["token"]))
+    return verified
 
-# --- Parse Antigravity Logs & RPC ---
-def parse_antigravity():
-    by_day = defaultdict(lambda: defaultdict(int))
-    by_model = defaultdict(lambda: defaultdict(int))
-    totals = defaultdict(int)
-    records = 0
-    active_cascade_ids = set()
-    rpc_scanned_invocations = 0
 
-    # 1. Attempt RPC Retrieval
-    rpc_conns = locate_antigravity_rpc()
-    for port, token in rpc_conns:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        # Get active trajectories
-        url_traj = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetAllCascadeTrajectories"
-        req_traj = urllib.request.Request(
-            url_traj,
-            data=json.dumps({}).encode('utf-8'),
-            headers={
-                "Content-Type": "application/json",
-                "Connect-Protocol-Version": "1",
-                "X-Codeium-Csrf-Token": token
-            },
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req_traj, context=ctx, timeout=3) as resp:
-                traj_data = json.loads(resp.read().decode('utf-8'))
-                summaries = traj_data.get("trajectorySummaries", {})
-                for cascade_id in summaries.keys():
-                    active_cascade_ids.add(cascade_id)
-                    
-                    # Query metadata
-                    url_meta = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata"
-                    req_meta = urllib.request.Request(
-                        url_meta,
-                        data=json.dumps({"cascadeId": cascade_id}).encode('utf-8'),
-                        headers={
-                            "Content-Type": "application/json",
-                            "Connect-Protocol-Version": "1",
-                            "X-Codeium-Csrf-Token": token
-                        },
-                        method="POST"
-                    )
-                    with urllib.request.urlopen(req_meta, context=ctx, timeout=3) as resp_meta:
-                        meta_data = json.loads(resp_meta.read().decode('utf-8'))
-                        for item in meta_data.get("generatorMetadata", []):
-                            chat_model = item.get("chatModel", {})
-                            usage = chat_model.get("usage", {})
-                            if not usage:
-                                continue
-                            
-                            it = int(usage.get("inputTokens") or usage.get("input_token_count") or usage.get("prompt_token_count") or usage.get("prompt_eval_count") or 0)
-                            ot = int(usage.get("outputTokens") or usage.get("output_token_count") or usage.get("eval_count") or 0)
-                            cc = int(usage.get("cacheCreationInputTokens") or usage.get("cacheWriteTokens") or 0)
-                            cr = int(usage.get("cachedContentTokenCount") or usage.get("cached_content_token_count") or usage.get("cacheReadTokens") or 0)
-                            rt = int(usage.get("reasoning_tokens") or usage.get("thinking_tokens") or usage.get("reasoning_output_tokens") or 0)
-                            model_id = chat_model.get("model") or usage.get("model") or "unknown"
-                            model_name = resolve_model(model_id)
-                            
-                            ts_str = chat_model.get("chatStartMetadata", {}).get("createdAt")
-                            ts = None
-                            if ts_str:
-                                try:
-                                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone()
-                                except Exception:
-                                    pass
-                                    
-                            if ts and CUTOFF <= ts <= LIMIT_UPPER:
-                                day = ts.strftime("%Y-%m-%d")
-                                by_day[day]["input_tokens"] += it
-                                by_day[day]["output_tokens"] += ot
-                                by_day[day]["cache_creation_input_tokens"] += cc
-                                by_day[day]["cache_read_input_tokens"] += cr
-                                by_day[day]["reasoning_tokens"] += rt
-                                by_model[model_name]["input_tokens"] += it
-                                by_model[model_name]["output_tokens"] += ot
-                                by_model[model_name]["cache_creation_input_tokens"] += cc
-                                by_model[model_name]["cache_read_input_tokens"] += cr
-                                by_model[model_name]["reasoning_tokens"] += rt
-                                totals["input_tokens"] += it
-                                totals["output_tokens"] += ot
-                                totals["cache_creation_input_tokens"] += cc
-                                totals["cache_read_input_tokens"] += cr
-                                totals["reasoning_tokens"] += rt
-                                ALL_INVOCATIONS.append({
-                                    "timestamp": ts,
-                                    "source": "Antigravity (RPC)",
-                                    "model": model_name,
-                                    "input_tokens": it,
-                                    "output_tokens": ot,
-                                    "cache_creation": cc,
-                                    "cache_read": cr,
-                                    "reasoning": rt,
-                                    "exact": True,
-                                    "session_id": cascade_id,
-                                    "source_file": "RPC"
-                                })
-                                rpc_scanned_invocations += 1
-                                records += 1
-        except Exception:
-            pass
+def _rpc_usage_int(usage: Mapping[str, Any], *keys: str) -> int:
+    """First non-empty usage field among aliases, coerced to int."""
+    for key in keys:
+        val = usage.get(key)
+        if val:
+            return int(val)
+    return 0
 
-    # 2. File-based Fallback for closed/archived sessions
-    files = []
+
+@dataclass
+class AntigravityScan:
+    usage: UsageAggregate
+    active_sessions: int = 0
+    rpc_records: int = 0
+    fallback_transcripts: int = 0
+    estimated_records: int = 0
+    records: int = 0
+
+    @property
+    def sessions_scanned(self) -> int:
+        return self.active_sessions + self.fallback_transcripts
+
+
+def _parse_antigravity_rpc(window: Window, scan: AntigravityScan) -> set:
+    """Query active cascades over RPC; returns the cascade ids seen."""
+    active_ids: set = set()
+    ctx = _insecure_loopback_ctx()
+    for port, token in locate_antigravity_rpc():
+        traj = _rpc_post(port, token, "GetAllCascadeTrajectories", {}, ctx, timeout=3)
+        if traj is None:
+            continue
+        for cascade_id in traj.get("trajectorySummaries", {}):
+            active_ids.add(cascade_id)
+            meta = _rpc_post(
+                port, token, "GetCascadeTrajectoryGeneratorMetadata",
+                {"cascadeId": cascade_id}, ctx, timeout=3,
+            )
+            if meta is None:
+                continue
+            for item in meta.get("generatorMetadata", []):
+                chat_model = item.get("chatModel", {})
+                usage = chat_model.get("usage", {})
+                if not usage:
+                    continue
+                ts_str = chat_model.get("chatStartMetadata", {}).get("createdAt")
+                ts = None
+                if ts_str:
+                    try:
+                        ts = datetime.fromisoformat(
+                            ts_str.replace("Z", "+00:00")).astimezone()
+                    except ValueError:
+                        ts = None
+                if ts is None or not window.contains(ts):
+                    continue
+                model_id = chat_model.get("model") or usage.get("model") or "unknown"
+                scan.usage.add(Invocation(
+                    timestamp=ts,
+                    source="Antigravity (RPC)",
+                    model=resolve_model(model_id),
+                    input_tokens=_rpc_usage_int(
+                        usage, "inputTokens", "input_token_count",
+                        "prompt_token_count", "prompt_eval_count"),
+                    output_tokens=_rpc_usage_int(
+                        usage, "outputTokens", "output_token_count", "eval_count"),
+                    cache_creation=_rpc_usage_int(
+                        usage, "cacheCreationInputTokens", "cacheWriteTokens"),
+                    cache_read=_rpc_usage_int(
+                        usage, "cachedContentTokenCount",
+                        "cached_content_token_count", "cacheReadTokens"),
+                    reasoning=_rpc_usage_int(
+                        usage, "reasoning_tokens", "thinking_tokens",
+                        "reasoning_output_tokens"),
+                    exact=True,
+                    session_id=cascade_id,
+                    source_file="RPC",
+                ))
+                scan.rpc_records += 1
+                scan.records += 1
+    return active_ids
+
+
+def _find_brain_transcripts() -> List[str]:
+    files: List[str] = []
     for brain_dir in ANTIGRAVITY_BRAIN_DIRS:
-        if os.path.exists(brain_dir):
-            for root, dirs, filenames in os.walk(brain_dir):
-                for filename in filenames:
-                    if filename == "transcript.jsonl":
-                        files.append(os.path.join(root, filename))
+        if not os.path.exists(brain_dir):
+            continue
+        for root, _dirs, filenames in os.walk(brain_dir):
+            if "transcript.jsonl" in filenames:
+                files.append(os.path.join(root, "transcript.jsonl"))
+    return files
 
-    seen = set()
-    fallback_transcripts_scanned = 0
-    fallback_invocations_estimated = 0
 
-    for f in files:
+def _parse_antigravity_fallback(
+    window: Window, scan: AntigravityScan, skip_ids: set
+) -> None:
+    """chars/4 estimation over archived brain transcripts.
+
+    For each PLANNER_RESPONSE step the input is estimated from all characters
+    accumulated so far (plus flat context overhead); characters already sent
+    at the previous model call are attributed to cache-read.
+    """
+    seen: set = set()
+    for f in _find_brain_transcripts():
         parts = os.path.normpath(f).split(os.sep)
         conv_id = parts[-4] if len(parts) >= 4 else "unknown_conv"
-        
         # Skip active sessions that were already queried via RPC
-        if conv_id in active_cascade_ids:
+        if conv_id in skip_ids:
             continue
-            
-        try:
-            fh = open(f, encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-            
-        fallback_transcripts_scanned += 1
-        with fh:
-            accumulated_chars = 0
-            last_model_call_accumulated_chars = 0
-            current_model = "gemini-3-flash-preview"  # Default fallback (most Antigravity sessions)
-            for idx, line in enumerate(fh):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                
-                # Check for model setting changes (only in user input or system generated blocks)
-                content = rec.get("content") or ""
-                # More specific regex to ensure we are in a settings change block
-                match = re.search(r"<USER_SETTINGS_CHANGE>\s*The user changed setting `Model Selection` from .*? to (.*?)(?:\.\s|\.$|$)", content)
-                if match:
-                    model_candidate = match.group(1).strip()
-                    name_lower = model_candidate.lower()
-                    if "gemini 3.5 flash (high)" in name_lower:
-                        current_model = "gemini-3.5-flash-high"
-                    elif "gemini 3.5 flash (medium)" in name_lower:
-                        current_model = "gemini-3.5-flash-medium"
-                    elif "gemini 3.5 flash (low)" in name_lower:
-                        current_model = "gemini-3.5-flash-low"
-                    elif "gemini 3.5 pro" in name_lower:
-                        current_model = "gemini-3.5-pro"
-                    elif "gemini 3.5 flash" in name_lower:
-                        current_model = "gemini-3.5-flash"
-                    elif "gemini 3.1 pro (high)" in name_lower:
-                        current_model = "gemini-3.1-pro-high"
-                    elif "gemini 3.1 pro (low)" in name_lower:
-                        current_model = "gemini-3.1-pro-low"
-                    elif "claude sonnet 4.6" in name_lower:
-                        current_model = "claude-sonnet-4-6-thinking"
-                    elif "claude opus 4.6" in name_lower:
-                        current_model = "claude-opus-4-6-thinking"
-                    elif "gpt-5.6 sol" in name_lower or "gpt 5.6 sol" in name_lower:
-                        current_model = "gpt-5.6-sol"
-                    elif "gpt-5.6 terra" in name_lower or "gpt 5.6 terra" in name_lower:
-                        current_model = "gpt-5.6-terra"
-                    elif "gpt-5.6 luna" in name_lower or "gpt 5.6 luna" in name_lower:
-                        current_model = "gpt-5.6-luna"
-                    elif "gpt-oss 120b" in name_lower or "gpt-oss 128b" in name_lower:
-                        current_model = "gpt-oss-120b-medium"
-                    elif "gemini 3 flash" in name_lower:
-                        current_model = "gemini-3-flash-preview"
-                    elif "gemini 3" in name_lower:
-                        current_model = "gemini-3-flash-preview"
-                    else:
-                        current_model = model_candidate
 
-                ts = parse_ts(rec)
-                if ts is None or ts < CUTOFF or ts > LIMIT_UPPER:
-                    continue
-                
-                thinking = rec.get("thinking") or ""
-                tool_calls = str(rec.get("tool_calls") or "")
-                step_chars = len(content) + len(thinking) + len(tool_calls)
-                
-                source = rec.get("source")
-                step_type = rec.get("type")
-                
-                # Deduplicate step calls
-                step_uid = f"{conv_id}_{idx}"
-                if step_uid in seen:
-                    continue
-                seen.add(step_uid)
-                
-                if source == "MODEL" and step_type == "PLANNER_RESPONSE":
-                    # Estimate token usage
-                    ot = max(1, step_chars // 4)
-                    total_in = (accumulated_chars // 4) + 6000
-                    
-                    if last_model_call_accumulated_chars > 0:
-                        cr = (last_model_call_accumulated_chars // 4) + 6000
-                        it = max(0, total_in - cr)
-                    else:
-                        cr = 0
-                        it = total_in
-                        
-                    last_model_call_accumulated_chars = accumulated_chars + step_chars
-                    
-                    day = ts.strftime("%Y-%m-%d")
-                    model = f"{current_model} (estimated)"
-                    
-                    by_day[day]["input_tokens"] += it
-                    by_day[day]["output_tokens"] += ot
-                    by_day[day]["cache_read_input_tokens"] += cr
-                    
-                    by_model[model]["input_tokens"] += it
-                    by_model[model]["output_tokens"] += ot
-                    by_model[model]["cache_read_input_tokens"] += cr
-                    
-                    totals["input_tokens"] += it
-                    totals["output_tokens"] += ot
-                    totals["cache_read_input_tokens"] += cr
-                    
-                    ALL_INVOCATIONS.append({
-                        "timestamp": ts,
-                        "source": "Antigravity (Fallback)",
-                        "model": model,
-                        "input_tokens": it,
-                        "output_tokens": ot,
-                        "cache_creation": 0,
-                        "cache_read": cr,
-                        "reasoning": 0,
-                        "exact": False,
-                        "session_id": conv_id,
-                        "source_file": os.path.basename(f)
-                    })
-                    fallback_invocations_estimated += 1
-                    records += 1
-                
-                accumulated_chars += step_chars
-                
-    total_transcripts_scanned = len(active_cascade_ids) + fallback_transcripts_scanned
-    return by_day, by_model, totals, total_transcripts_scanned, records, len(active_cascade_ids), rpc_scanned_invocations, fallback_invocations_estimated
+        scan.fallback_transcripts += 1
+        accumulated_chars = 0
+        last_model_call_accumulated_chars = 0
+        # Default fallback (most Antigravity sessions)
+        current_model = "gemini-3-flash-preview"
 
-# --- Parse Codex Logs ---
-def parse_codex():
-    by_day = defaultdict(lambda: defaultdict(int))
-    by_model = defaultdict(lambda: defaultdict(int))
-    totals = defaultdict(int)
-    records = 0
-    sessions_scanned = 0
+        for idx, rec in enumerate(_iter_jsonl(f)):
+            content = rec.get("content") or ""
+            switched = _model_from_settings_change(content)
+            if switched is not None:
+                current_model = switched
 
+            ts = parse_ts(rec)
+            if ts is None or not window.contains(ts):
+                continue
+
+            thinking = rec.get("thinking") or ""
+            tool_calls = str(rec.get("tool_calls") or "")
+            step_chars = len(content) + len(thinking) + len(tool_calls)
+
+            step_uid = f"{conv_id}_{idx}"
+            if step_uid in seen:
+                continue
+            seen.add(step_uid)
+
+            if rec.get("source") == "MODEL" and rec.get("type") == "PLANNER_RESPONSE":
+                ot = max(1, step_chars // CHARS_PER_TOKEN)
+                total_in = (accumulated_chars // CHARS_PER_TOKEN) + CONTEXT_OVERHEAD_TOKENS
+                if last_model_call_accumulated_chars > 0:
+                    cr = (last_model_call_accumulated_chars // CHARS_PER_TOKEN
+                          + CONTEXT_OVERHEAD_TOKENS)
+                    it = max(0, total_in - cr)
+                else:
+                    cr = 0
+                    it = total_in
+                last_model_call_accumulated_chars = accumulated_chars + step_chars
+
+                scan.usage.add(Invocation(
+                    timestamp=ts,
+                    source="Antigravity (Fallback)",
+                    model=f"{current_model}{ESTIMATED_SUFFIX}",
+                    input_tokens=it,
+                    output_tokens=ot,
+                    cache_read=cr,
+                    exact=False,
+                    session_id=conv_id,
+                    source_file=os.path.basename(f),
+                ))
+                scan.estimated_records += 1
+                scan.records += 1
+
+            accumulated_chars += step_chars
+
+
+def parse_antigravity(window: Optional[Window] = None) -> AntigravityScan:
+    """Hybrid Antigravity scan: exact RPC for live sessions, estimated
+    fallback for archived transcripts."""
+    window = window or default_window()
+    scan = AntigravityScan(usage=UsageAggregate())
+    active_ids = _parse_antigravity_rpc(window, scan)
+    scan.active_sessions = len(active_ids)
+    _parse_antigravity_fallback(window, scan, active_ids)
+    return scan
+
+
+# ---------------------------------------------------------------------------
+# Source: OpenAI Codex
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CodexScan:
+    usage: UsageAggregate
+    sessions_scanned: int = 0
+    records: int = 0
+
+
+def parse_codex(window: Optional[Window] = None) -> CodexScan:
+    """Granular rollout parsing: per-event token_count records from the
+    rollout JSONL files referenced by ~/.codex/state_5.sqlite threads."""
+    window = window or default_window()
+    scan = CodexScan(usage=UsageAggregate())
     if not os.path.exists(CODEX_STATE):
-        return by_day, by_model, totals, 0, 0
+        return scan
 
     try:
         conn = sqlite3.connect(CODEX_STATE)
-        cursor = conn.cursor()
-        
-        # Query threads updated since cutoff
-        cutoff_ts = int(CUTOFF.timestamp())
-        cursor.execute("SELECT model, rollout_path FROM threads WHERE updated_at > ? AND rollout_path IS NOT NULL;", (cutoff_ts,))
-        rows = cursor.fetchall()
-        
-        for model_name, rollout_path in rows:
-            if not os.path.exists(rollout_path):
+        try:
+            rows = conn.execute(
+                "SELECT model, rollout_path FROM threads "
+                "WHERE updated_at > ? AND rollout_path IS NOT NULL;",
+                (int(window.cutoff.timestamp()),),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        LOG.warning("codex state db unreadable: %s", exc)
+        return scan
+
+    for model_name, rollout_path in rows:
+        if not os.path.exists(rollout_path):
+            continue
+        scan.sessions_scanned += 1
+        model = model_name or "(unknown)"
+        path_parts = rollout_path.split(os.sep)
+        session = path_parts[-2] if len(path_parts) >= 2 else "rollout"
+
+        for rec in _iter_jsonl(rollout_path):
+            if rec.get("type") != "event_msg":
                 continue
-            
-            sessions_scanned += 1
-            try:
-                with open(rollout_path, encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line: continue
-                        try:
-                            rec = json.loads(line)
-                        except: continue
-                        
-                        if rec.get("type") == "event_msg":
-                            payload = rec.get("payload") or {}
-                            if payload.get("type") == "token_count":
-                                info = payload.get("info") or {}
-                                usage = info.get("last_token_usage") or {}
-                                if not usage: continue
-                                
-                                it = int(usage.get("input_tokens") or 0)
-                                ot = int(usage.get("output_tokens") or 0)
-                                cr = int(usage.get("cached_input_tokens") or 0)
-                                rt = int(usage.get("reasoning_output_tokens") or 0)
-                                
-                                ts_str = rec.get("timestamp")
-                                ts = None
-                                if ts_str:
-                                    try:
-                                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone()
-                                    except: pass
-                                
-                                if ts and CUTOFF <= ts <= LIMIT_UPPER:
-                                    day = ts.strftime("%Y-%m-%d")
-                                    by_day[day]["input_tokens"] += it
-                                    by_day[day]["output_tokens"] += ot
-                                    by_day[day]["cache_read_input_tokens"] += cr
-                                    by_day[day]["reasoning_tokens"] += rt
-                                    
-                                    by_model[model_name]["input_tokens"] += it
-                                    by_model[model_name]["output_tokens"] += ot
-                                    by_model[model_name]["cache_read_input_tokens"] += cr
-                                    by_model[model_name]["reasoning_tokens"] += rt
-                                    
-                                    totals["input_tokens"] += it
-                                    totals["output_tokens"] += ot
-                                    totals["cache_read_input_tokens"] += cr
-                                    totals["reasoning_tokens"] += rt
-                                    ALL_INVOCATIONS.append({
-                                        "timestamp": ts,
-                                        "source": "OpenAI Codex",
-                                        "model": model_name,
-                                        "input_tokens": it,
-                                        "output_tokens": ot,
-                                        "cache_creation": 0,
-                                        "cache_read": cr,
-                                        "reasoning": rt,
-                                        "exact": True,
-                                        "session_id": rollout_path.split(os.sep)[-2] if os.sep in rollout_path else "rollout",
-                                        "source_file": os.path.basename(rollout_path)
-                                    })
-                                    records += 1
-            except:
+            payload = rec.get("payload") or {}
+            if payload.get("type") != "token_count":
                 continue
-        conn.close()
-    except:
-        pass
-        
-    return by_day, by_model, totals, sessions_scanned, records
+            usage = (payload.get("info") or {}).get("last_token_usage") or {}
+            if not usage:
+                continue
+            ts = parse_ts(rec)
+            if ts is None or not window.contains(ts):
+                continue
+            scan.usage.add(Invocation(
+                timestamp=ts,
+                source="OpenAI Codex",
+                model=model,
+                input_tokens=int(usage.get("input_tokens") or 0),
+                output_tokens=int(usage.get("output_tokens") or 0),
+                cache_read=int(usage.get("cached_input_tokens") or 0),
+                reasoning=int(usage.get("reasoning_output_tokens") or 0),
+                exact=True,
+                session_id=session,
+                source_file=os.path.basename(rollout_path),
+            ))
+            scan.records += 1
+    return scan
 
 
-def codex_native_total():
+def codex_native_total(window: Optional[Window] = None) -> Tuple[int, int]:
     """Codex's OWN lifetime counter: SUM(threads.tokens_used), windowed to the
     report range by thread updated_at. This is the figure behind Codex's
-    `/usage` display -- a cross-check on our granular rollout parse. Thread-level
+    `/usage` display — a cross-check on our granular rollout parse. Thread-level
     granularity (coarser than per-event), so treat as an order-of-magnitude
     validator, not a row-exact match. Returns (thread_count, total_tokens)."""
+    window = window or default_window()
     if not os.path.exists(CODEX_STATE):
         return 0, 0
     try:
         conn = sqlite3.connect(CODEX_STATE)
-        lo = int(CUTOFF.timestamp())
-        hi = int(LIMIT_UPPER.timestamp())
-        row = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(tokens_used), 0) FROM threads "
-            "WHERE updated_at > ? AND updated_at <= ?",
-            (lo, hi),
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(tokens_used), 0) FROM threads "
+                "WHERE updated_at > ? AND updated_at <= ?",
+                (int(window.cutoff.timestamp()), int(window.limit_upper.timestamp())),
+            ).fetchone()
+        finally:
+            conn.close()
         return int(row[0] or 0), int(row[1] or 0)
-    except Exception:
+    except (sqlite3.Error, OSError, OverflowError) as exc:
+        LOG.warning("codex native total unavailable: %s", exc)
         return 0, 0
 
 
-# --- Parse Gemini CLI chat logs (estimated; no exact token telemetry on disk) ---
-# The Gemini CLI stores conversations under ~/.gemini/tmp/<project>/chats/ as
-# either a single .json file with a messages[] array, or .jsonl one msg/line.
-# These hold message TEXT only -- there is no usageMetadata/token telemetry
-# recorded -- so tokens are ESTIMATED via the same chars/4 heuristic the
-# Antigravity fallback uses. This is the ONLY source for pre-May 2026 Gemini
-# activity (the Antigravity brain transcripts only go back to ~2026-05-19).
-GEMINI_CLI_CHAT_GLOBS = [
-    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*.json")),
-    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*.jsonl")),
-    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*", "*.jsonl")),
-]
+# ---------------------------------------------------------------------------
+# Source: Gemini CLI
+# ---------------------------------------------------------------------------
 
-
-def _gemini_text(content):
+def _gemini_text(content: Any) -> str:
     """Flatten a CLI message 'content' (str | list[{text}] | dict) to text."""
     if isinstance(content, str):
         return content
@@ -928,22 +1052,48 @@ def _gemini_text(content):
     return str(content or "")
 
 
-def parse_gemini_cli():
-    by_day = defaultdict(lambda: defaultdict(int))
-    by_model = defaultdict(lambda: defaultdict(int))
-    totals = defaultdict(int)
-    records = 0
-    scanned_files = 0
-    exact_cnt = 0
-    est_cnt = 0
+@dataclass
+class GeminiCliScan:
+    usage: UsageAggregate
+    files_scanned: int = 0
+    records: int = 0
+    exact_records: int = 0
+    estimated_records: int = 0
 
-    files = []
+
+def _load_gemini_session(path: str) -> Tuple[Dict[str, Any], Optional[datetime]]:
+    """Read one chat file into {msg_id: msg} plus the session start time."""
+    messages_by_id: Dict[str, Any] = {}
+    session_start: Optional[datetime] = None
+    if path.endswith(".json"):
+        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+            data = json.load(fh)
+        session_start = parse_ts(data)
+        for m in data.get("messages", []):
+            if "id" in m:
+                messages_by_id[m["id"]] = m
+    else:  # .jsonl, one message per line
+        for rec in _iter_jsonl(path):
+            if rec.get("startTime") and not session_start:
+                session_start = parse_ts(rec)
+            if "id" in rec:
+                messages_by_id[rec["id"]] = rec
+    return messages_by_id, session_start
+
+
+def parse_gemini_cli(window: Optional[Window] = None) -> GeminiCliScan:
+    """Hybrid Gemini CLI scan: exact when the log carries a tokens dict,
+    chars/4 estimation otherwise."""
+    window = window or default_window()
+    scan = GeminiCliScan(usage=UsageAggregate())
+
+    files: List[str] = []
     for g in GEMINI_CLI_CHAT_GLOBS:
         files.extend(glob.glob(g))
     files = sorted(set(files))
 
-    cutoff_date = CUTOFF.date() - timedelta(days=1)
-    limit_date = LIMIT_UPPER.date() + timedelta(days=1)
+    cutoff_date = window.cutoff.date() - timedelta(days=1)
+    limit_date = window.limit_upper.date() + timedelta(days=1)
     local_tz = datetime.now().astimezone().tzinfo
 
     for f in files:
@@ -955,51 +1105,29 @@ def parse_gemini_cli():
             file_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
         except ValueError:
             continue
-
         if not (cutoff_date <= file_date <= limit_date):
             continue
 
-        messages_by_id = {}
-        session_start_time = None
-
         try:
-            if f.endswith(".json"):
-                with open(f, "r", encoding="utf-8", errors="ignore") as fh:
-                    data = json.load(fh)
-                    session_start_time = parse_ts(data)
-                    for m in data.get("messages", []):
-                        if "id" in m:
-                            messages_by_id[m["id"]] = m
-            else:  # .jsonl, one message per line
-                with open(f, "r", encoding="utf-8", errors="ignore") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        rec = json.loads(line)
-                        if rec.get("startTime") and not session_start_time:
-                            session_start_time = parse_ts(rec)
-                        if "id" in rec:
-                            messages_by_id[rec["id"]] = rec
-        except Exception:
+            messages_by_id, session_start = _load_gemini_session(f)
+        except (OSError, ValueError) as exc:
+            LOG.debug("skipping gemini chat %s: %s", f, exc)
             continue
-
         if not messages_by_id:
             continue
+        if not session_start:
+            session_start = datetime.combine(
+                file_date, datetime.min.time()).replace(tzinfo=local_tz)
 
-        if not session_start_time:
-            session_start_time = datetime.combine(file_date, datetime.min.time()).replace(tzinfo=local_tz)
-
-        def get_msg_time(item):
-            msg = item[1]
-            ts = parse_ts(msg)
+        def _msg_time(item: Tuple[str, Any]) -> float:
+            ts = parse_ts(item[1])
             return ts.timestamp() if ts else 0
 
-        sorted_messages = [msg for msg_id, msg in sorted(messages_by_id.items(), key=get_msg_time)]
+        sorted_messages = [m for _id, m in sorted(messages_by_id.items(), key=_msg_time)]
 
         session_chars = 0
         previous_session_chars = 0
-        scanned_files += 1
+        scan.files_scanned += 1
 
         # Propagate model selection within session
         current_model = "gemini-3-flash-preview"
@@ -1009,200 +1137,159 @@ def parse_gemini_cli():
                 current_model = m_id
                 break
 
+        path_parts = os.path.normpath(f).split(os.sep)
+        proj_name = path_parts[-3] if len(path_parts) >= 3 else "unknown_project"
+
         for msg in sorted_messages:
             role = (msg.get("type") or msg.get("role") or "").lower()
             if role in ("user", "human"):
-                text = _gemini_text(msg.get("content") if msg.get("content") is not None else msg.get("text"))
+                text = _gemini_text(
+                    msg.get("content") if msg.get("content") is not None
+                    else msg.get("text"))
                 session_chars += len(text)
-            elif role in ("gemini", "model", "assistant"):
-                ts = parse_ts(msg) or session_start_time
-                text = _gemini_text(msg.get("content") if msg.get("content") is not None else msg.get("text"))
-                step_chars = len(text)
-                
-                if not (CUTOFF <= ts <= LIMIT_UPPER):
-                    session_chars += step_chars + len(str(msg.get("thoughts") or ""))
-                    continue
+                continue
+            if role not in ("gemini", "model", "assistant"):
+                continue
 
-                model_id = msg.get("model")
-                if not model_id or model_id == "unknown":
-                    model_name = resolve_model(current_model)
-                else:
-                    model_name = resolve_model(model_id)
-                    current_model = model_id
+            ts = parse_ts(msg) or session_start
+            text = _gemini_text(
+                msg.get("content") if msg.get("content") is not None
+                else msg.get("text"))
+            step_chars = len(text)
 
-                tokens = msg.get("tokens")
-                has_exact = False
-                if tokens and isinstance(tokens, dict):
-                    it = int(tokens.get("input") or 0)
-                    ot = int(tokens.get("output") or 0)
-                    cr = int(tokens.get("cached") or 0)
-                    rt = int(tokens.get("thoughts") or 0)
-                    if it > 0 or ot > 0:
-                        has_exact = True
-
-                if has_exact:
-                    exact = True
-                    exact_cnt += 1
-                else:
-                    exact = False
-                    est_cnt += 1
-                    total_in = (session_chars // 4) + 6000
-                    if previous_session_chars > 0:
-                        cr = (previous_session_chars // 4) + 6000
-                        it = max(0, total_in - cr)
-                    else:
-                        cr = 0
-                        it = total_in
-                    ot = max(1, step_chars // 4)
-                    rt = len(str(msg.get("thoughts") or "")) // 4
-
-                day = ts.strftime("%Y-%m-%d")
-                model_label = model_name if exact else f"{model_name} (estimated)"
-
-                by_day[day]["input_tokens"] += it
-                by_day[day]["output_tokens"] += ot
-                by_day[day]["cache_read_input_tokens"] += cr
-                by_day[day]["reasoning_tokens"] += rt
-
-                by_model[model_label]["input_tokens"] += it
-                by_model[model_label]["output_tokens"] += ot
-                by_model[model_label]["cache_read_input_tokens"] += cr
-                by_model[model_label]["reasoning_tokens"] += rt
-
-                totals["input_tokens"] += it
-                totals["output_tokens"] += ot
-                totals["cache_read_input_tokens"] += cr
-                totals["reasoning_tokens"] += rt
-
-                parts = os.path.normpath(f).split(os.sep)
-                proj_name = parts[-3] if len(parts) >= 3 else "unknown_project"
-
-                ALL_INVOCATIONS.append({
-                    "timestamp": ts,
-                    "source": "Gemini CLI",
-                    "model": model_label,
-                    "input_tokens": it,
-                    "output_tokens": ot,
-                    "cache_creation": 0,
-                    "cache_read": cr,
-                    "reasoning": rt,
-                    "exact": exact,
-                    "session_id": proj_name,
-                    "source_file": basename
-                })
-                records += 1
-                previous_session_chars = session_chars
+            if not window.contains(ts):
                 session_chars += step_chars + len(str(msg.get("thoughts") or ""))
+                continue
 
-    return by_day, by_model, totals, scanned_files, records, exact_cnt, est_cnt
+            model_id = msg.get("model")
+            if not model_id or model_id == "unknown":
+                model_name = resolve_model(current_model)
+            else:
+                model_name = resolve_model(model_id)
+                current_model = model_id
+
+            tokens = msg.get("tokens")
+            it = ot = cr = rt = 0
+            exact = False
+            if tokens and isinstance(tokens, dict):
+                it = int(tokens.get("input") or 0)
+                ot = int(tokens.get("output") or 0)
+                cr = int(tokens.get("cached") or 0)
+                rt = int(tokens.get("thoughts") or 0)
+                exact = it > 0 or ot > 0
+
+            if exact:
+                scan.exact_records += 1
+            else:
+                scan.estimated_records += 1
+                total_in = (session_chars // CHARS_PER_TOKEN) + CONTEXT_OVERHEAD_TOKENS
+                if previous_session_chars > 0:
+                    cr = (previous_session_chars // CHARS_PER_TOKEN
+                          + CONTEXT_OVERHEAD_TOKENS)
+                    it = max(0, total_in - cr)
+                else:
+                    cr = 0
+                    it = total_in
+                ot = max(1, step_chars // CHARS_PER_TOKEN)
+                rt = len(str(msg.get("thoughts") or "")) // CHARS_PER_TOKEN
+
+            scan.usage.add(Invocation(
+                timestamp=ts,
+                source="Gemini CLI",
+                model=model_name if exact else f"{model_name}{ESTIMATED_SUFFIX}",
+                input_tokens=it,
+                output_tokens=ot,
+                cache_read=cr,
+                reasoning=rt,
+                exact=exact,
+                session_id=proj_name,
+                source_file=basename,
+            ))
+            scan.records += 1
+            previous_session_chars = session_chars
+            session_chars += step_chars + len(str(msg.get("thoughts") or ""))
+
+    return scan
 
 
-# --- Parse Fleet Usage Ledger (forward, EXACT: local Ollama/Gemma, OpenRouter, HF) ---
-# Append-only JSONL written by fleet_usage_proxy.py + instrumented fleet clients.
-# Each line: {timestamp, provider, lane, model, input_tokens, output_tokens,
-# cached_tokens, reasoning_tokens, source}. These are exact counts from each
-# lane's own API response (ollama prompt_eval_count/eval_count; OpenRouter usage).
-def parse_fleet_usage():
-    by_day = defaultdict(lambda: defaultdict(int))
-    by_model = defaultdict(lambda: defaultdict(int))
-    totals = defaultdict(int)
-    records = 0
+# ---------------------------------------------------------------------------
+# Source: Fleet usage ledger
+# ---------------------------------------------------------------------------
 
+@dataclass
+class FleetScan:
+    usage: UsageAggregate
+    records: int = 0
+
+
+def parse_fleet_usage(window: Optional[Window] = None) -> FleetScan:
+    """Forward, EXACT accounting for local Ollama/Gemma, OpenRouter and HF
+    lanes. Append-only JSONL written by fleet/fleet_usage_proxy.py; each line:
+    {timestamp, provider, lane, model, input_tokens, output_tokens,
+    cached_tokens, reasoning_tokens, source} — exact counts from each lane's
+    own API response (ollama prompt_eval_count/eval_count; OpenRouter usage)."""
+    window = window or default_window()
+    scan = FleetScan(usage=UsageAggregate())
     if not os.path.exists(FLEET_USAGE_LEDGER):
-        return by_day, by_model, totals, records
+        return scan
 
-    try:
-        fh = open(FLEET_USAGE_LEDGER, encoding="utf-8", errors="ignore")
-    except OSError:
-        return by_day, by_model, totals, records
-
-    with fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = parse_ts(rec)
-            if ts is None or ts < CUTOFF or ts > LIMIT_UPPER:
-                continue
-
-            provider = rec.get("provider") or "Fleet"
-            model = rec.get("model") or "unknown"
-            it = int(rec.get("input_tokens") or 0)
-            ot = int(rec.get("output_tokens") or 0)
-            cr = int(rec.get("cached_tokens") or 0)
-            rt = int(rec.get("reasoning_tokens") or 0)
-
-            day = ts.strftime("%Y-%m-%d")
-            by_day[day]["input_tokens"] += it
-            by_day[day]["output_tokens"] += ot
-            by_day[day]["cache_read_input_tokens"] += cr
-            by_day[day]["reasoning_tokens"] += rt
-
-            by_model[model]["input_tokens"] += it
-            by_model[model]["output_tokens"] += ot
-            by_model[model]["cache_read_input_tokens"] += cr
-            by_model[model]["reasoning_tokens"] += rt
-
-            totals["input_tokens"] += it
-            totals["output_tokens"] += ot
-            totals["cache_read_input_tokens"] += cr
-            totals["reasoning_tokens"] += rt
-
-            ALL_INVOCATIONS.append({
-                "timestamp": ts,
-                "source": f"Fleet:{provider}",
-                "model": model,
-                "input_tokens": it,
-                "output_tokens": ot,
-                "cache_creation": 0,
-                "cache_read": cr,
-                "reasoning": rt,
-                "exact": True,
-                "session_id": rec.get("lane") or "fleet",
-                "source_file": os.path.basename(FLEET_USAGE_LEDGER),
-            })
-            records += 1
-
-    return by_day, by_model, totals, records
+    for rec in _iter_jsonl(FLEET_USAGE_LEDGER):
+        ts = parse_ts(rec)
+        if ts is None or not window.contains(ts):
+            continue
+        scan.usage.add(Invocation(
+            timestamp=ts,
+            source=f"Fleet:{rec.get('provider') or 'Fleet'}",
+            model=rec.get("model") or "unknown",
+            input_tokens=int(rec.get("input_tokens") or 0),
+            output_tokens=int(rec.get("output_tokens") or 0),
+            cache_read=int(rec.get("cached_tokens") or 0),
+            reasoning=int(rec.get("reasoning_tokens") or 0),
+            exact=True,
+            session_id=rec.get("lane") or "fleet",
+            source_file=os.path.basename(FLEET_USAGE_LEDGER),
+        ))
+        scan.records += 1
+    return scan
 
 
-def compute_and_print_split(invocations, title):
-    exact_tok = 0
-    est_tok = 0
-    exact_cost = 0.0
-    est_cost = 0.0
-    
+# ---------------------------------------------------------------------------
+# Report rendering
+# ---------------------------------------------------------------------------
+
+DAY_TABLE_HEADER = (
+    f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
+)
+SEP_70 = "=" * 70
+
+
+def print_day_table(by_day: Mapping[str, TokenCounts], totals: TokenCounts) -> None:
+    print(DAY_TABLE_HEADER)
+    print("-" * len(DAY_TABLE_HEADER))
+    for day in sorted(by_day):
+        i, o, _cc, cr, rt = cols(by_day[day])
+        print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
+    print("-" * len(DAY_TABLE_HEADER))
+    ti, to, _tcc, tcr, trt = cols(totals)
+    print(f"{'TOTAL':<12}{fmt(ti):>14}{fmt(to):>14}{fmt(tcr):>16}{fmt(trt):>14}")
+
+
+def compute_and_print_split(invocations: Sequence[Invocation], title: str) -> None:
+    """Exact vs estimated token/cost split for a set of invocations."""
+    exact_tok = est_tok = 0
+    exact_cost = est_cost = 0.0
     for inv in invocations:
-        it = inv.get("input_tokens", 0)
-        ot = inv.get("output_tokens", 0)
-        cc = inv.get("cache_creation", 0)
-        cr = inv.get("cache_read", 0)
-        rt = inv.get("reasoning", 0)
-        tot = it + ot + cc + cr + rt
-        
-        cost, _ = model_bill(inv["model"], {
-            "input_tokens": it,
-            "cache_creation_input_tokens": cc,
-            "cache_read_input_tokens": cr,
-            "output_tokens": ot,
-            "reasoning_tokens": rt
-        })
-        
-        if inv.get("exact", True):
-            exact_tok += tot
+        cost, _src = model_bill(inv.model, inv.billing_bucket())
+        if inv.exact:
+            exact_tok += inv.total_tokens
             exact_cost += cost
         else:
-            est_tok += tot
+            est_tok += inv.total_tokens
             est_cost += cost
-            
+
     blended_tok = exact_tok + est_tok
-    blended_cost = exact_cost + est_cost
     confidence = (exact_tok / blended_tok * 100) if blended_tok > 0 else 100.0
-    
+
     print(f"--- Exact vs Estimated Split ({title}) ---")
     print(f"Exact tokens:                       {fmt(exact_tok)}")
     print(f"Estimated tokens:                   {fmt(est_tok)}")
@@ -1211,326 +1298,223 @@ def compute_and_print_split(invocations, title):
     print()
     print(f"Exact shadow cost:                  ${exact_cost:,.2f}")
     print(f"Estimated shadow cost:              ${est_cost:,.2f}")
-    print(f"Blended shadow cost:                ${blended_cost:,.2f}")
+    print(f"Blended shadow cost:                ${exact_cost + est_cost:,.2f}")
     print("----------------------------------------------------------------------\n")
 
 
-def get_cache_label(share):
-    if share >= 0.95:
+def get_cache_label(share: float) -> str:
+    if share >= CACHE_SHARE_EXCELLENT:
         return "Excellent"
-    elif share >= 0.85:
+    if share >= CACHE_SHARE_GOOD:
         return "Good"
-    elif share >= 0.60:
+    if share >= CACHE_SHARE_WARNING:
         return "Warning"
-    else:
-        return "Cold context leak"
+    return "Cold context leak"
 
 
-def print_cache_health_report(invocations):
+def _cache_warnings(fresh_input: int, share: float) -> List[str]:
+    reasons = []
+    if fresh_input > INPUT_WARN_THRESHOLD:
+        reasons.append(f"input_tokens > 250,000 ({fmt(fresh_input)})")
+    if share < CACHE_SHARE_GOOD:
+        reasons.append(f"cache_share < 85% ({share * 100:.1f}%)")
+    return reasons
+
+
+def print_cache_health_report(invocations: Sequence[Invocation]) -> None:
     print("======================================================================")
     print("CACHE HEALTH SCORE REPORT")
     print("======================================================================")
-    
+
     # 1. By Model
     print("--- By Model Cache Health ---")
-    model_stats = defaultdict(lambda: {"input": 0, "total": 0, "cache_read": 0})
+    model_stats: Dict[str, Dict[str, int]] = defaultdict(
+        lambda: {"input": 0, "total": 0, "cache_read": 0})
     for inv in invocations:
-        m = inv["model"]
-        total = inv["input_tokens"] + inv["output_tokens"] + inv["cache_creation"] + inv["cache_read"] + inv["reasoning"]
-        model_stats[m]["input"] += inv["input_tokens"]
-        model_stats[m]["total"] += total
-        model_stats[m]["cache_read"] += inv["cache_read"]
-        
+        stats = model_stats[inv.model]
+        stats["input"] += inv.input_tokens
+        stats["total"] += inv.total_tokens
+        stats["cache_read"] += inv.cache_read
+
     for m, stats in sorted(model_stats.items()):
         total = stats["total"]
         if total == 0:
             continue
         share = stats["cache_read"] / total
-        label = get_cache_label(share)
-        print(f"  Model: {m:<30} | Share: {share*100:5.1f}% | Label: {label:<20}")
-        if stats["input"] > 250000 or share < 0.85:
-            warn_reasons = []
-            if stats["input"] > 250000:
-                warn_reasons.append(f"input_tokens > 250,000 ({fmt(stats['input'])})")
-            if share < 0.85:
-                warn_reasons.append(f"cache_share < 85% ({share*100:.1f}%)")
-            print(f"    [WARNING] {', '.join(warn_reasons)}")
-            
+        print(f"  Model: {m:<30} | Share: {share * 100:5.1f}% | "
+              f"Label: {get_cache_label(share):<20}")
+        reasons = _cache_warnings(stats["input"], share)
+        if reasons:
+            print(f"    [WARNING] {', '.join(reasons)}")
+
     # 2. By Session (Top 10)
     print("\n--- Top 10 Sessions Cache Health ---")
-    session_stats = defaultdict(lambda: {"input": 0, "total": 0, "cache_read": 0, "source": ""})
+    session_stats: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {"input": 0, "total": 0, "cache_read": 0, "source": ""})
     for inv in invocations:
-        s = inv["session_id"]
-        total = inv["input_tokens"] + inv["output_tokens"] + inv["cache_creation"] + inv["cache_read"] + inv["reasoning"]
-        session_stats[s]["input"] += inv["input_tokens"]
-        session_stats[s]["total"] += total
-        session_stats[s]["cache_read"] += inv["cache_read"]
-        session_stats[s]["source"] = inv["source"]
-        
-    sorted_sessions = sorted(session_stats.items(), key=lambda x: -x[1]["total"])[:10]
-    for s, stats in sorted_sessions:
+        stats = session_stats[inv.session_id]
+        stats["input"] += inv.input_tokens
+        stats["total"] += inv.total_tokens
+        stats["cache_read"] += inv.cache_read
+        stats["source"] = inv.source
+
+    for s, stats in sorted(session_stats.items(), key=lambda x: -x[1]["total"])[:10]:
         total = stats["total"]
         if total == 0:
             continue
         share = stats["cache_read"] / total
-        label = get_cache_label(share)
-        source = stats["source"]
-        print(f"  Session: {s:<30} ({source:<15}) | Share: {share*100:5.1f}% | Label: {label:<20}")
-        if stats["input"] > 250000 or share < 0.85:
-            warn_reasons = []
-            if stats["input"] > 250000:
-                warn_reasons.append(f"input_tokens > 250,000 ({fmt(stats['input'])})")
-            if share < 0.85:
-                warn_reasons.append(f"cache_share < 85% ({share*100:.1f}%)")
-            print(f"    [WARNING] {', '.join(warn_reasons)}")
+        print(f"  Session: {s:<30} ({stats['source']:<15}) | "
+              f"Share: {share * 100:5.1f}% | Label: {get_cache_label(share):<20}")
+        reasons = _cache_warnings(stats["input"], share)
+        if reasons:
+            print(f"    [WARNING] {', '.join(reasons)}")
     print()
 
 
-def get_model_bucket(model_name):
-    m_clean = model_name.replace(" (estimated)", "").strip().lower()
-    
-    if "opus" in m_clean:
-        if "thinking" in m_clean:
-            return "premium_reasoning"
-        return "premium_cloud"
-    elif "thinking" in m_clean:
+def get_model_bucket(model_name: str) -> str:
+    """Classify a model into a spend class for the bucket report."""
+    m = model_name.replace(ESTIMATED_SUFFIX, "").strip().lower()
+    if "opus" in m:
+        return "premium_reasoning" if "thinking" in m else "premium_cloud"
+    if "thinking" in m:
         return "premium_reasoning"
-    elif "pro" in m_clean:
+    if "pro" in m or "flash-high" in m:
         return "standard_cloud"
-    elif "flash-high" in m_clean:
-        return "standard_cloud"
-    elif "flash-low" in m_clean:
+    if "flash-low" in m:
         return "cheap_cloud"
-    elif "flash" in m_clean or "haiku" in m_clean or "lite" in m_clean:
+    if "flash" in m or "haiku" in m or "lite" in m:
         return "cheap_cloud"
-    elif "gpt-5.5" in m_clean or "gpt-5.4" in m_clean:
-        if "mini" in m_clean:
-            return "cheap_cloud"
-        return "premium_cloud"
-    elif "gpt-oss" in m_clean:
+    if "gpt-5.5" in m or "gpt-5.4" in m:
+        return "cheap_cloud" if "mini" in m else "premium_cloud"
+    if "gpt-oss" in m:
         return "cheap_or_local"
-    elif "gemma" in m_clean or "local" in m_clean or "ollama" in m_clean:
+    if "gemma" in m or "local" in m or "ollama" in m:
         return "local_free"
-    
-    inp, out, cr, src = price_for(model_name)
-    if inp >= 5.0:
+
+    pricing = price_for(model_name)
+    if pricing.input >= 5.0:
         return "premium_cloud"
-    elif inp >= 1.5:
+    if pricing.input >= 1.5:
         return "standard_cloud"
-    elif inp > 0.0:
+    if pricing.input > 0.0:
         return "cheap_cloud"
-    else:
-        return "local_free"
+    return "local_free"
 
 
-def print_model_class_buckets(invocations):
-    buckets = {
+_BUCKET_DISPLAY = {
+    "premium_cloud": "Premium cloud usage",
+    "premium_reasoning": "Premium cloud usage",
+    "standard_cloud": "Standard cloud usage",
+    "cheap_cloud": "Cheap cloud usage",
+    "cheap_or_local": "Cheap cloud usage",
+    "local_free": "Local/free usage",
+}
+
+
+def print_model_class_buckets(invocations: Sequence[Invocation]) -> None:
+    buckets: Dict[str, Dict[str, float]] = {
         "Premium cloud usage": {"tokens": 0, "cost": 0.0},
         "Standard cloud usage": {"tokens": 0, "cost": 0.0},
         "Cheap cloud usage": {"tokens": 0, "cost": 0.0},
-        "Local/free usage": {"tokens": 0, "cost": 0.0}
+        "Local/free usage": {"tokens": 0, "cost": 0.0},
     }
-    
     for inv in invocations:
-        m = inv["model"]
-        total = inv["input_tokens"] + inv["output_tokens"] + inv["cache_creation"] + inv["cache_read"] + inv["reasoning"]
-        cost, _ = model_bill(m, {
-            "input_tokens": inv["input_tokens"],
-            "cache_creation_input_tokens": inv["cache_creation"],
-            "cache_read_input_tokens": inv["cache_read"],
-            "output_tokens": inv["output_tokens"],
-            "reasoning_tokens": inv["reasoning"]
-        })
-        
-        cls = get_model_bucket(m)
-        if cls in ("premium_cloud", "premium_reasoning"):
-            b = "Premium cloud usage"
-        elif cls == "standard_cloud":
-            b = "Standard cloud usage"
-        elif cls in ("cheap_cloud", "cheap_or_local"):
-            b = "Cheap cloud usage"
-        else:
-            b = "Local/free usage"
-            
-        buckets[b]["tokens"] += total
-        buckets[b]["cost"] += cost
-        
+        cost, _src = model_bill(inv.model, inv.billing_bucket())
+        name = _BUCKET_DISPLAY.get(get_model_bucket(inv.model), "Local/free usage")
+        buckets[name]["tokens"] += inv.total_tokens
+        buckets[name]["cost"] += cost
+
     print("======================================================================")
     print("MODEL CLASS BUCKETS REPORT")
     print("======================================================================")
     for name, data in buckets.items():
-        print(f"{name:<25} total {fmt(data['tokens']):>16} tokens   ${data['cost']:,.2f}")
+        print(f"{name:<25} total {fmt(int(data['tokens'])):>16} tokens   "
+              f"${data['cost']:,.2f}")
     print()
 
 
-def print_top_hogs(invocations):
-    sorted_inv = sorted(invocations, key=lambda x: -x.get("input_tokens", 0))[:20]
-    
+def print_top_hogs(invocations: Sequence[Invocation], top_n: int = 20) -> None:
     print("======================================================================")
-    print("Top 20 Token Hogs")
+    print(f"Top {top_n} Token Hogs")
     print("======================================================================")
-    for idx, inv in enumerate(sorted_inv, 1):
-        ts = inv.get("timestamp")
-        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "unknown"
-        source = inv.get("source", "unknown")
-        model = inv.get("model", "unknown")
-        exact_str = "exact" if inv.get("exact", True) else "estimated"
-        it = inv.get("input_tokens", 0)
-        ot = inv.get("output_tokens", 0)
-        cr = inv.get("cache_read", 0)
-        tot = it + ot + inv.get("cache_creation", 0) + cr + inv.get("reasoning", 0)
-        sess = inv.get("session_id", "unknown")
-        
-        print(f"{idx:2d}. [{ts_str}] {source} | {model} | {exact_str}")
-        print(f"    input: {fmt(it):<12} | output: {fmt(ot):<12} | cache-read: {fmt(cr):<12} | total: {fmt(tot)}")
-        print(f"    session/transcript path: {sess}")
+    for idx, inv in enumerate(
+            sorted(invocations, key=lambda x: -x.input_tokens)[:top_n], 1):
+        ts_str = inv.timestamp.strftime("%Y-%m-%d %H:%M:%S") if inv.timestamp else "unknown"
+        exact_str = "exact" if inv.exact else "estimated"
+        print(f"{idx:2d}. [{ts_str}] {inv.source} | {inv.model} | {exact_str}")
+        print(f"    input: {fmt(inv.input_tokens):<12} | output: {fmt(inv.output_tokens):<12} "
+              f"| cache-read: {fmt(inv.cache_read):<12} | total: {fmt(inv.total_tokens)}")
+        print(f"    session/transcript path: {inv.session_id}")
     print()
 
 
-def print_route_recommendations(invocations):
+def _company_of(source: str) -> str:
+    """Provider/company display name for an invocation source tag."""
+    if "Claude Code" in source:
+        return "Anthropic (Claude Code)"
+    if source.startswith("Fleet:"):
+        prov = source.split(":", 1)[1]
+        if "Ollama" in prov:
+            return "Local (Ollama/Gemma)"
+        if "OpenRouter" in prov:
+            return "OpenRouter (free)"
+        if "HF" in prov or "HuggingFace" in prov:
+            return "HuggingFace (free)"
+        return f"Fleet ({prov})"
+    if "Gemini CLI" in source:
+        return "Google (Gemini CLI)"
+    if "Antigravity" in source:
+        return "Google (Antigravity)"
+    if "Codex" in source or "OpenAI" in source:
+        return "OpenAI (Codex)"
+    return "Unknown"
+
+
+def print_route_recommendations(invocations: Sequence[Invocation]) -> None:
+    """Standing routing doctrine plus a data-driven spike callout: the single
+    (company, day) with the highest fresh-input volume in this window."""
     print("======================================================================")
     print("Recommended routing changes:")
     print("======================================================================")
     print("- Move repeated vault scans to local/cheap agents.")
     print("- Keep Claude Opus reserved for final synthesis and arbitration.")
     print("- Compress Antigravity handoffs before replaying long sessions.")
-    print("- Investigate 2026-06-16 Antigravity input spike.")
+
+    spikes: Dict[Tuple[str, str], int] = defaultdict(int)
+    for inv in invocations:
+        if inv.timestamp is None:
+            continue
+        key = (_company_of(inv.source), inv.timestamp.strftime("%Y-%m-%d"))
+        spikes[key] += inv.input_tokens
+    if spikes:
+        (company, day), volume = max(spikes.items(), key=lambda kv: kv[1])
+        if volume > INPUT_WARN_THRESHOLD:
+            print(f"- Investigate {day} {company} input spike "
+                  f"({fmt(volume)} fresh input tokens in one day).")
     print("======================================================================")
 
 
-# --- Main Reporting ---
-print("\n======================================================================")
-if RANGE_START or RANGE_END:
-    print(f"Token usage monitor — range {CUTOFF:%Y-%m-%d} -> {LIMIT_UPPER - timedelta(days=1):%Y-%m-%d}")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {LIMIT_UPPER:%Y-%m-%d %H:%M} {NOW:%Z}")
-elif MONTH:
-    print(f"Token usage monitor — Month: {MONTH}")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {LIMIT_UPPER:%Y-%m-%d %H:%M} {NOW:%Z}")
-elif COMPARE_N:
-    print(f"Token usage monitor — compare last {COMPARE_N}d vs prior {COMPARE_N}d (collecting {DAYS} days)")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {NOW:%Y-%m-%d %H:%M} {NOW:%Z}")
-else:
-    print(f"Token usage monitor — last {DAYS} day(s)")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {NOW:%Y-%m-%d %H:%M} {NOW:%Z}")
-print("======================================================================\n")
+def merge_by_model(scans: Iterable[UsageAggregate]) -> Dict[str, TokenCounts]:
+    """Union of per-model buckets across sources, with model names sanitized."""
+    all_models: Dict[str, TokenCounts] = defaultdict(lambda: defaultdict(int))
+    for agg in scans:
+        for model, bucket in agg.by_model.items():
+            key = model or "(unknown)"
+            for k, v in bucket.items():
+                all_models[key][k] += v
+    return all_models
 
-# 1. Claude Code report
-c_day, c_model, c_totals, c_files, c_records = parse_claude()
-print("--- Claude Code ---")
-print(f"Transcripts scanned: {c_files}   Usage records: {c_records}\n")
-hdr = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr)
-print("-" * len(hdr))
-for day in sorted(c_day):
-    i, o, cc, cr, rt = cols(c_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr))
-ti, to, tcc, tcr, trt = cols(c_totals)
-print(f"{'TOTAL':<12}{fmt(ti):>14}{fmt(to):>14}{fmt(tcr):>16}{fmt(trt):>14}\n")
 
-# 2. Antigravity report
-a_day, a_model, a_totals, a_files, a_records, active_cnt, rpc_cnt, est_cnt = parse_antigravity()
-print("--- Google Antigravity (Hybrid RPC & Estimation) [! partial - Antigravity retention starts ~2026-05-19; pre-May encrypted] ---")
-print(f"Sessions scanned: {a_files} ({active_cnt} active via RPC + {a_files - active_cnt} fallback from disk)")
-print(f"Invocations tracked: {a_records} ({rpc_cnt} exact via RPC + {est_cnt} estimated fallback)\n")
-hdr_ag = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_ag)
-print("-" * len(hdr_ag))
-for day in sorted(a_day):
-    i, o, cc, cr, rt = cols(a_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_ag))
-tai, tao, tacc, tacr, tart = cols(a_totals)
-print(f"{'TOTAL':<12}{fmt(tai):>14}{fmt(tao):>14}{fmt(tacr):>16}{fmt(tart):>14}\n")
-compute_and_print_split([inv for inv in ALL_INVOCATIONS if inv["source"].startswith("Antigravity")], "Antigravity")
+def print_model_breakdown_and_bill(all_models: Mapping[str, TokenCounts]) -> None:
+    """Per-model totals plus the honest API-equivalent shadow bill.
 
-# 3. Codex report
-cx_day, cx_model, cx_totals, cx_files, cx_records = parse_codex()
-print("--- OpenAI Codex (Granular Rollout Parsing) ---")
-print(f"Sessions scanned: {cx_files}   Usage events: {cx_records}\n")
-hdr_cx = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_cx)
-print("-" * len(hdr_cx))
-for day in sorted(cx_day):
-    i, o, cc, cr, rt = cols(cx_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_cx))
-txi, txo, txcc, txcr, txrt = cols(cx_totals)
-print(f"{'TOTAL':<12}{fmt(txi):>14}{fmt(txo):>14}{fmt(txcr):>16}{fmt(txrt):>14}")
-# Cross-check our rollout parse against Codex's OWN native counter. Compare like
-# with like: Codex's tokens_used excludes cache-reads, so validate against our
-# non-cache billable tokens (input w/CC + output + reasoning), and note cache
-# separately rather than inflating the delta.
-cx_nthreads, cx_native = codex_native_total()
-cx_billable = txi + txo + txrt
-if cx_native:
-    delta = (cx_billable - cx_native) / cx_native * 100
-    print(f"  cross-check: Codex native (threads.tokens_used) {fmt(cx_native)} across {cx_nthreads} threads "
-          f"| our billable (in+out+reasoning, no cache) {fmt(cx_billable)} | delta {delta:+.0f}% "
-          f"(+{fmt(txcr)} cache-read tracked separately)")
-print()
-
-# 3b. Gemini CLI report (Hybrid Exact & Estimation; pre-May fills here)
-gc_day, gc_model, gc_totals, gc_files, gc_records, gc_exact, gc_est = parse_gemini_cli()
-print("--- Gemini CLI (Hybrid Exact & Estimation) ---")
-print(f"Sessions scanned: {gc_files}   Invocations tracked: {gc_records} ({gc_exact} exact + {gc_est} estimated)\n")
-hdr_gc = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_gc)
-print("-" * len(hdr_gc))
-for day in sorted(gc_day):
-    i, o, cc, cr, rt = cols(gc_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_gc))
-tgi, tgo, tgcc, tgcr, tgrt = cols(gc_totals)
-print(f"{'TOTAL':<12}{fmt(tgi):>14}{fmt(tgo):>14}{fmt(tgcr):>16}{fmt(tgrt):>14}\n")
-compute_and_print_split([inv for inv in ALL_INVOCATIONS if inv["source"] == "Gemini CLI"], "Gemini CLI")
-
-# 3d. Fleet Usage Ledger (forward, exact: local Ollama/Gemma, OpenRouter, HF)
-fl_day, fl_model, fl_totals, fl_records = parse_fleet_usage()
-print("--- Fleet Usage Ledger (Local Ollama/Gemma + OpenRouter + HF) ---")
-print(f"Invocations tracked: {fl_records} (exact, from each lane's API response)\n")
-hdr_fl = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_fl)
-print("-" * len(hdr_fl))
-for day in sorted(fl_day):
-    i, o, cc, cr, rt = cols(fl_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_fl))
-tfi, tfo, tfcc, tfcr, tfrt = cols(fl_totals)
-print(f"{'TOTAL':<12}{fmt(tfi):>14}{fmt(tfo):>14}{fmt(tfcr):>16}{fmt(tfrt):>14}\n")
-
-# 4. Model Breakdown
-all_models = defaultdict(lambda: defaultdict(int))
-for m, d in c_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in a_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in cx_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in gc_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in fl_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-
-# Robustness: normalize any None/empty model name across every record so the
-# cross-source aggregates (model breakdown, blended split, cache health, top
-# hogs, route recs) can sort/price model keys without crashing on None.
-for _inv in ALL_INVOCATIONS:
-    if not _inv.get("model"):
-        _inv["model"] = "(unknown)"
-
-# Same guard for the pre-aggregated model breakdown dict.
-if None in all_models:
-    _none_d = all_models.pop(None)
-    for _k, _v in _none_d.items():
-        all_models["(unknown)"][_k] += _v
-
-if all_models:
+    The bill shows what these tokens WOULD have cost at first-party API list
+    prices, with cache-reads priced as cache-reads (not as fresh input) and
+    reasoning as output. This is a hypothetical reference point, NOT money
+    saved: on flat-rate subscriptions this volume was never going to be bought
+    at API rates. Naive (all-tokens x flat-rate) math overstates this
+    several-fold because cache-reads dominate the token count but bill at ~10%
+    of input. Set AI_MONTHLY_SUBSCRIPTION_USD to print real spend alongside."""
     print("--- By Model Breakdown ---")
     mw = max(len(str(m)) for m in all_models)
     grand_total_tokens = 0
@@ -1538,6 +1522,7 @@ if all_models:
     grand_total_cold = 0.0
     total_cache_reads = 0
     used_estimate = False
+
     for model in sorted(all_models, key=lambda m: -sum(all_models[m].values())):
         i, o, cc, cr, rt = cols(all_models[model])
         total = i + o + cc + cr + rt
@@ -1547,24 +1532,16 @@ if all_models:
         grand_total_cost += cost
         # Cold-boot: every input-side token (input + cache-creation + cache-read)
         # charged at full fresh-input rate; reasoning billed as output.
-        inp_rate, out_rate, _crr, _s = price_for(model)
-        grand_total_cold += ((i + cc + cr) * inp_rate + (o + rt) * out_rate) / 1_000_000
+        pricing = price_for(model)
+        grand_total_cold += ((i + cc + cr) * pricing.input
+                             + (o + rt) * pricing.output) / 1_000_000
         if src == EST:
             used_estimate = True
         tag = "~" if src == EST else " "
         print(f"  {model:<{mw}}  total {fmt(total):>16}   "
-              f"(in {fmt(i + cc)}, out {fmt(o)}, cache-read {fmt(cr)}, reasoning {fmt(rt)})  {tag}${cost:,.2f}")
+              f"(in {fmt(i + cc)}, out {fmt(o)}, cache-read {fmt(cr)}, "
+              f"reasoning {fmt(rt)})  {tag}${cost:,.2f}")
 
-    # --- Honest API-equivalent shadow bill --------------------------------------
-    # What these tokens WOULD have cost at first-party API list prices, with
-    # cache-reads priced as cache-reads (not as fresh input) and reasoning as
-    # output. This is a hypothetical reference point, NOT money saved: on flat-
-    # rate subscriptions this volume was never going to be bought at API rates,
-    # so there is no "arbitrage" sum being pocketed. Naive (all-tokens x flat-
-    # rate) math overstates this several-fold because cache-reads dominate the
-    # token count but bill at ~10% of input.
-    #
-    # Set AI_MONTHLY_SUBSCRIPTION_USD to print your real spend alongside it.
     sub_cost = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
     cache_share = (total_cache_reads / grand_total_tokens * 100) if grand_total_tokens else 0
 
@@ -1573,7 +1550,8 @@ if all_models:
     print("======================================================================")
     print(f"Realistic cost (cache-reads billed as cache): ${grand_total_cost:,.2f}")
     print(f"COLD-BOOT cost (no cache, every token fresh): ${grand_total_cold:,.2f}")
-    print(f"What caching saved vs cold-boot:              ${grand_total_cold - grand_total_cost:,.2f}")
+    print(f"What caching saved vs cold-boot:              "
+          f"${grand_total_cold - grand_total_cost:,.2f}")
     if used_estimate:
         print("  ~ = model priced from an estimate, not a first-party doc")
     print(f"Cache-reads as share of all tokens:         {cache_share:.1f}%  "
@@ -1584,113 +1562,237 @@ if all_models:
     print("This is the price you DIDN'T pay by using flat-rate plans, not a sum")
     print("you earned. Treat it as a usage gauge, not a savings account.")
     print("======================================================================\n")
-    
-    compute_and_print_split(ALL_INVOCATIONS, "Blended Report")
-    print_cache_health_report(ALL_INVOCATIONS)
-    print_model_class_buckets(ALL_INVOCATIONS)
-    print_top_hogs(ALL_INVOCATIONS)
-    print_route_recommendations(ALL_INVOCATIONS)
-    
-    if BY_PROVIDER:
-        # Group invocations by provider/company
-        provider_stats = defaultdict(lambda: {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_creation": 0,
-            "cache_read": 0,
-            "reasoning": 0,
-            "cost": 0.0,
-            "count": 0
-        })
-        for inv in ALL_INVOCATIONS:
-            source = inv["source"]
-            if "Claude Code" in source:
-                company = "Anthropic (Claude Code)"
-            elif source.startswith("Fleet:"):
-                prov = source.split(":", 1)[1]
-                if "Ollama" in prov:
-                    company = "Local (Ollama/Gemma)"
-                elif "OpenRouter" in prov:
-                    company = "OpenRouter (free)"
-                elif "HF" in prov or "HuggingFace" in prov:
-                    company = "HuggingFace (free)"
-                else:
-                    company = f"Fleet ({prov})"
-            elif "Gemini CLI" in source:
-                company = "Google (Gemini CLI)"
-            elif "Antigravity" in source:
-                company = "Google (Antigravity)"
-            elif "Codex" in source or "OpenAI" in source:
-                company = "OpenAI (Codex)"
-            else:
-                company = "Unknown"
-                
-            it = inv.get("input_tokens", 0)
-            ot = inv.get("output_tokens", 0)
-            cc = inv.get("cache_creation", 0)
-            cr = inv.get("cache_read", 0)
-            rt = inv.get("reasoning", 0)
-            
-            d = {
-                "input_tokens": it,
-                "cache_creation_input_tokens": cc,
-                "cache_read_input_tokens": cr,
-                "output_tokens": ot,
-                "reasoning_tokens": rt
-            }
-            cost, _ = model_bill(inv["model"], d)
-            
-            c_stats = provider_stats[company]
-            c_stats["input_tokens"] += it
-            c_stats["output_tokens"] += ot
-            c_stats["cache_creation"] += cc
-            c_stats["cache_read"] += cr
-            c_stats["reasoning"] += rt
-            c_stats["cost"] += cost
-            c_stats["count"] += 1
-            
-        print("======================================================================")
-        print("BY-PROVIDER SUMMARY REPORT")
-        print("======================================================================")
-        hdr_prov = f"{'Provider/Company':<30}{'Invocations':>12}{'Input (w/CC)':>16}{'Output':>14}{'Cache Read':>16}{'Reasoning':>14}{'Cost':>12}"
-        print(hdr_prov)
-        print("-" * len(hdr_prov))
-        
-        total_inv = 0
-        total_in = 0
-        total_out = 0
-        total_cr = 0
-        total_rt = 0
-        total_cost = 0.0
-        
-        _ordered = ["Anthropic (Claude Code)", "Google (Antigravity)", "Google (Gemini CLI)",
-                    "OpenAI (Codex)", "Local (Ollama/Gemma)", "OpenRouter (free)", "HuggingFace (free)"]
-        _provider_order = _ordered + [c for c in provider_stats if c not in _ordered]
-        for company in _provider_order:
-            if company not in provider_stats:
-                continue
-            c_stats = provider_stats[company]
-            inv_cnt = c_stats["count"]
-            it = c_stats["input_tokens"] + c_stats["cache_creation"]
-            ot = c_stats["output_tokens"]
-            cr = c_stats["cache_read"]
-            rt = c_stats["reasoning"]
-            cost = c_stats["cost"]
-            
-            total_inv += inv_cnt
-            total_in += it
-            total_out += ot
-            total_cr += cr
-            total_rt += rt
-            total_cost += cost
-            
-            print(f"{company:<30}{fmt(inv_cnt):>12}{fmt(it):>16}{fmt(ot):>14}{fmt(cr):>16}{fmt(rt):>14}  ${cost:10.2f}")
-            
-        print("-" * len(hdr_prov))
-        print(f"{'TOTAL':<30}{fmt(total_inv):>12}{fmt(total_in):>16}{fmt(total_out):>14}{fmt(total_cr):>16}{fmt(total_rt):>14}  ${total_cost:10.2f}")
-        print("======================================================================\n")
 
-print()
+
+_PROVIDER_ORDER = [
+    "Anthropic (Claude Code)", "Google (Antigravity)", "Google (Gemini CLI)",
+    "OpenAI (Codex)", "Local (Ollama/Gemma)", "OpenRouter (free)",
+    "HuggingFace (free)",
+]
+
+
+def print_by_provider_summary(invocations: Sequence[Invocation]) -> None:
+    provider_stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+        "input_tokens": 0, "output_tokens": 0, "cache_creation": 0,
+        "cache_read": 0, "reasoning": 0, "cost": 0.0, "count": 0,
+    })
+    for inv in invocations:
+        cost, _src = model_bill(inv.model, inv.billing_bucket())
+        stats = provider_stats[_company_of(inv.source)]
+        stats["input_tokens"] += inv.input_tokens
+        stats["output_tokens"] += inv.output_tokens
+        stats["cache_creation"] += inv.cache_creation
+        stats["cache_read"] += inv.cache_read
+        stats["reasoning"] += inv.reasoning
+        stats["cost"] += cost
+        stats["count"] += 1
+
+    print("======================================================================")
+    print("BY-PROVIDER SUMMARY REPORT")
+    print("======================================================================")
+    hdr = (f"{'Provider/Company':<30}{'Invocations':>12}{'Input (w/CC)':>16}"
+           f"{'Output':>14}{'Cache Read':>16}{'Reasoning':>14}{'Cost':>12}")
+    print(hdr)
+    print("-" * len(hdr))
+
+    totals = {"inv": 0, "in": 0, "out": 0, "cr": 0, "rt": 0, "cost": 0.0}
+    ordered = _PROVIDER_ORDER + [c for c in provider_stats if c not in _PROVIDER_ORDER]
+    for company in ordered:
+        if company not in provider_stats:
+            continue
+        stats = provider_stats[company]
+        it = stats["input_tokens"] + stats["cache_creation"]
+        totals["inv"] += stats["count"]
+        totals["in"] += it
+        totals["out"] += stats["output_tokens"]
+        totals["cr"] += stats["cache_read"]
+        totals["rt"] += stats["reasoning"]
+        totals["cost"] += stats["cost"]
+        print(f"{company:<30}{fmt(stats['count']):>12}{fmt(it):>16}"
+              f"{fmt(stats['output_tokens']):>14}{fmt(stats['cache_read']):>16}"
+              f"{fmt(stats['reasoning']):>14}  ${stats['cost']:10.2f}")
+
+    print("-" * len(hdr))
+    print(f"{'TOTAL':<30}{fmt(totals['inv']):>12}{fmt(totals['in']):>16}"
+          f"{fmt(totals['out']):>14}{fmt(totals['cr']):>16}"
+          f"{fmt(totals['rt']):>14}  ${totals['cost']:10.2f}")
+    print("======================================================================\n")
+
+
+def print_period_comparison(
+    invocations: Sequence[Invocation], now: datetime, n: int
+) -> None:
+    """--compare N: last N days vs the prior N days, per company."""
+    mid = now - timedelta(days=n)
+    lo = now - timedelta(days=n * 2)
+
+    def company(src: str) -> str:
+        return (src or "unknown").split(" (")[0].split(":")[0].strip()
+
+    cur: Dict[str, int] = defaultdict(int)
+    prev: Dict[str, int] = defaultdict(int)
+    for inv in invocations:
+        if inv.timestamp is None:
+            continue
+        if inv.timestamp >= mid:
+            cur[company(inv.source)] += inv.total_tokens
+        elif inv.timestamp >= lo:
+            prev[company(inv.source)] += inv.total_tokens
+
+    companies = sorted(set(cur) | set(prev), key=lambda c: -(cur[c] + prev[c]))
+    sep = "-" * 70
+    print()
+    print(SEP_70)
+    print(f"Period comparison — last {n}d vs prior {n}d (total tokens, by company)")
+    print(f"  last {n}d : {mid:%Y-%m-%d} -> {now:%Y-%m-%d}")
+    print(f"  prior {n}d: {lo:%Y-%m-%d} -> {mid:%Y-%m-%d}")
+    print(SEP_70)
+    print(f"{'Company':<22}{'prior ' + str(n) + 'd':>16}{'last ' + str(n) + 'd':>16}{'delta':>12}")
+    print(sep)
+    total_cur = total_prev = 0
+    for c in companies:
+        p, cu = prev[c], cur[c]
+        total_cur += cu
+        total_prev += p
+        d = f"{(cu - p) / p * 100:+.0f}%" if p else ("new" if cu else "-")
+        print(f"{c:<22}{p:>16,}{cu:>16,}{d:>12}")
+    print(sep)
+    dt = f"{(total_cur - total_prev) / total_prev * 100:+.0f}%" if total_prev else "-"
+    print(f"{'TOTAL':<22}{total_prev:>16,}{total_cur:>16,}{dt:>12}")
+    print(SEP_70)
+
+
+def print_analytics_dashboard(
+    invocations: Sequence[Invocation], now: datetime
+) -> None:
+    """--lanes: period comparisons (24h / week / month / quarter / half / year,
+    each "to-date" vs the same elapsed offset into the prior period) plus
+    records (highest day/week/month + longest & current streak). One pass
+    builds a per-day series; every lane is date math on it."""
+
+    def humanize(n: float) -> str:
+        n = int(n)
+        if n == 0:
+            return "0"
+        for unit, val in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
+            if abs(n) >= val:
+                return f"{n / val:.2f}{unit}"
+        return str(n)
+
+    def delta(this: int, last: int) -> str:
+        if last == 0:
+            return "new" if this > 0 else "-"
+        return f"{(this - last) / last:+.0%}"
+
+    today = now.date()
+    day_sums: Dict[dtm.date, int] = defaultdict(int)
+    records: List[Tuple[datetime, int]] = []
+    for inv in invocations:
+        if inv.timestamp is None:
+            continue
+        day_sums[inv.timestamp.date()] += inv.total_tokens
+        records.append((inv.timestamp, inv.total_tokens))
+
+    if not records:
+        print("no data")
+        return
+
+    def dsum(lo: dtm.date, hi: dtm.date) -> int:
+        """Inclusive day-range sum over the per-day series."""
+        total = 0
+        cur = lo
+        while cur <= hi:
+            total += day_sums.get(cur, 0)
+            cur += dtm.timedelta(days=1)
+        return total
+
+    lanes: List[Tuple[str, int, int]] = []
+    # 24h rolling (timestamp precision)
+    lanes.append((
+        "this 24h / prior 24h",
+        sum(t for ts, t in records if now - dtm.timedelta(hours=24) <= ts < now),
+        sum(t for ts, t in records
+            if now - dtm.timedelta(hours=48) <= ts < now - dtm.timedelta(hours=24)),
+    ))
+    # week-to-date (Mon start)
+    ws = today - dtm.timedelta(days=today.weekday())
+    off = (today - ws).days
+    lanes.append(("this week / last week", dsum(ws, today),
+                  dsum(ws - dtm.timedelta(days=7), ws - dtm.timedelta(days=7 - off))))
+    # month-to-date
+    ms = today.replace(day=1)
+    off = (today - ms).days
+    lme = ms - dtm.timedelta(days=1)
+    lms = lme.replace(day=1)
+    lanes.append(("this month / last month", dsum(ms, today),
+                  dsum(lms, min(lms + dtm.timedelta(days=off), lme))))
+    # quarter-to-date (3mo)
+    qm = ((today.month - 1) // 3) * 3 + 1
+    qs = dtm.date(today.year, qm, 1)
+    off = (today - qs).days
+    pqs = dtm.date(today.year if qm > 1 else today.year - 1,
+                   qm - 3 if qm > 1 else 10, 1)
+    lanes.append(("this quarter / last (3mo)", dsum(qs, today),
+                  dsum(pqs, min(pqs + dtm.timedelta(days=off),
+                                qs - dtm.timedelta(days=1)))))
+    # half-to-date (6mo)
+    hm = 1 if today.month <= 6 else 7
+    hs = dtm.date(today.year, hm, 1)
+    off = (today - hs).days
+    phs = dtm.date(today.year if hm > 1 else today.year - 1,
+                   hm - 6 if hm > 1 else 7, 1)
+    lanes.append(("this half / last (6mo)", dsum(hs, today),
+                  dsum(phs, min(phs + dtm.timedelta(days=off),
+                                hs - dtm.timedelta(days=1)))))
+    # year-to-date
+    ys = dtm.date(today.year, 1, 1)
+    off = (today - ys).days
+    lys = dtm.date(today.year - 1, 1, 1)
+    lanes.append(("this year / last year", dsum(ys, today),
+                  dsum(lys, min(lys + dtm.timedelta(days=off),
+                                dtm.date(today.year - 1, 12, 31)))))
+
+    print(f"{'Lane':<28}{'this':>14}{'prior':>14}{'delta':>9}")
+    print("-" * 65)
+    for name, t, l in lanes:
+        print(f"{name:<28}{humanize(t):>14}{humanize(l):>14}{delta(t, l):>9}")
+
+    print()
+    print("Records (full history)")
+    print("-" * 65)
+    md = max(day_sums, key=lambda d: day_sums[d])
+    print(f"  Highest Day:    {md} ({humanize(day_sums[md])})")
+    weeks: Dict[Tuple[int, int], int] = defaultdict(int)
+    months: Dict[Tuple[int, int], int] = defaultdict(int)
+    for d, v in day_sums.items():
+        weeks[d.isocalendar()[:2]] += v
+        months[(d.year, d.month)] += v
+    mw = max(weeks, key=lambda k: weeks[k])
+    print(f"  Highest Week:   {mw[0]}-W{mw[1]:02d} ({humanize(weeks[mw])})")
+    mm = max(months, key=lambda k: months[k])
+    print(f"  Highest Month:  {mm[0]}-{mm[1]:02d} ({humanize(months[mm])})")
+
+    dates = sorted(day_sums)
+    best = cur = 0
+    bstart = bend = tstart = dates[0]
+    cd = dates[0]
+    while cd <= dates[-1]:
+        if day_sums.get(cd, 0) > 0:
+            if cur == 0:
+                tstart = cd
+            cur += 1
+            if cur > best:
+                best, bstart, bend = cur, tstart, cd
+        else:
+            cur = 0
+        cd += dtm.timedelta(days=1)
+    cstreak = 0
+    cd = today if day_sums.get(today, 0) > 0 else today - dtm.timedelta(days=1)
+    while day_sums.get(cd, 0) > 0:
+        cstreak += 1
+        cd -= dtm.timedelta(days=1)
+    print(f"  Longest Streak: {best} days ({bstart}..{bend})")
+    print(f"  Current Streak: {cstreak} days")
 
 
 # =============================================================================
@@ -1698,22 +1800,14 @@ print()
 # Source: https://github.com/C4AI/token-counter
 # Attribution: C4AI token-counter (MIT). Folded here so token_tracker.py
 # stays a single-file import with no external package required for basic use.
-# The C4AI token-counter counts tokenizer tokens in local files or HuggingFace
-# datasets, producing distribution stats (total, mean, median, IQR, P95, P99,
-# stddev) and optional Markdown/JSON reports. It uses HuggingFace tokenizers
-# (default: Qwen/Qwen3-1.7B-Base) and supports Parquet/JSONL inputs.
+# Counts tokenizer tokens in local files or HuggingFace datasets, producing
+# distribution stats (total, mean, median, IQR, P95, P99, stddev). Uses
+# HuggingFace tokenizers (default: Qwen/Qwen3-1.7B-Base), Parquet/JSONL/text.
 # =============================================================================
 
-import bisect
-import math
-import time as _time
-from dataclasses import dataclass, field as _field
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+DEFAULT_TC_MODEL = "Qwen/Qwen3-1.7B-Base"
+DEFAULT_TC_BATCH_SIZE = 256
 
-
-# ---------------------------------------------------------------------------
-# TokenCountStats â€” ported minimal subset from token_counter.reporting
-# ---------------------------------------------------------------------------
 
 @dataclass
 class TokenCountStats:
@@ -1722,6 +1816,7 @@ class TokenCountStats:
     Mirrors the public contract of C4AI token_counter.reporting.TokenCountStats
     so that callers can swap in the full library when available.
     """
+
     total_tokens: int = 0
     documents_processed: int = 0
     rows_seen: int = 0
@@ -1729,7 +1824,7 @@ class TokenCountStats:
     empty_text_rows: int = 0
     non_string_rows_coerced: int = 0
     # Distribution tracking (sorted list for percentile computation)
-    _lengths: List[int] = _field(default_factory=list, repr=False)
+    _lengths: List[int] = field(default_factory=list, repr=False)
     started_at_epoch: Optional[float] = None
     completed_at_epoch: Optional[float] = None
     wall_time: float = 0.0
@@ -1809,7 +1904,7 @@ class TokenCountStats:
         }
 
     @classmethod
-    def from_checkpoint_state(cls, state: Dict[str, Any]) -> "TokenCountStats":
+    def from_checkpoint_state(cls, state: Mapping[str, Any]) -> "TokenCountStats":
         obj = cls()
         obj.total_tokens = state.get("total_tokens", 0)
         obj.documents_processed = state.get("documents_processed", 0)
@@ -1824,23 +1919,17 @@ class TokenCountStats:
         return obj
 
 
-# ---------------------------------------------------------------------------
-# Core counting helpers â€” ported from token_counter.cli
-# ---------------------------------------------------------------------------
-
-DEFAULT_TC_MODEL = "Qwen/Qwen3-1.7B-Base"
-DEFAULT_TC_BATCH_SIZE = 256
-
-
 def _tc_token_lengths(tokenizer: Any, texts: List[str]) -> List[int]:
     """Return per-text token lengths using the given HuggingFace tokenizer."""
     if not texts:
         return []
     try:
-        encoded = tokenizer(texts, add_special_tokens=False, return_attention_mask=False)
-        input_ids = encoded["input_ids"] if isinstance(encoded, dict) else encoded.input_ids
+        encoded = tokenizer(texts, add_special_tokens=False,
+                            return_attention_mask=False)
+        input_ids = (encoded["input_ids"] if isinstance(encoded, dict)
+                     else encoded.input_ids)
         return [len(ids) for ids in input_ids]
-    except Exception:
+    except Exception:  # tokenizer implementations vary; fall back per-text
         return [len(tokenizer.encode(t, add_special_tokens=False)) for t in texts]
 
 
@@ -1861,8 +1950,8 @@ def count_tokens_in_texts(
     """Count tokenizer tokens across an iterable of strings.
 
     This is the primary programmatic entry-point folded in from C4AI
-    token-counter. It accepts any iterable of strings â€” files, dataset rows,
-    in-memory lists â€” and returns a TokenCountStats with full distribution stats.
+    token-counter. It accepts any iterable of strings — files, dataset rows,
+    in-memory lists — and returns a TokenCountStats with full distribution stats.
 
     Parameters
     ----------
@@ -1886,7 +1975,7 @@ def count_tokens_in_texts(
         tokenizer = _tc_load_tokenizer(model, trust_remote_code=trust_remote_code)
 
     stats = TokenCountStats()
-    stats.started_at_epoch = _time.time()
+    stats.started_at_epoch = time.time()
     batch: List[str] = []
 
     def _flush() -> None:
@@ -1912,7 +2001,7 @@ def count_tokens_in_texts(
             _flush()
 
     _flush()
-    stats.completed_at_epoch = _time.time()
+    stats.completed_at_epoch = time.time()
     stats.wall_time = max(0.0, stats.completed_at_epoch - stats.started_at_epoch)
     return stats
 
@@ -1958,8 +2047,7 @@ def count_tokens_in_file(
     TokenCountStats
         Populated distribution stats object.
     """
-    import pathlib as _pathlib
-    p = _pathlib.Path(path)
+    p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Input file not found: {path}")
 
@@ -1991,7 +2079,8 @@ def count_tokens_in_file(
             try:
                 import pandas as pd  # type: ignore
             except ImportError:
-                raise ImportError("pandas required for parquet support: pip install pandas pyarrow")
+                raise ImportError(
+                    "pandas required for parquet support: pip install pandas pyarrow")
             df = pd.read_parquet(path, columns=[field])
             for val in df[field]:
                 yield val if isinstance(val, str) else str(val)
@@ -1999,7 +2088,8 @@ def count_tokens_in_file(
                 if max_docs is not None and count >= max_docs:
                     return
         else:
-            raise ValueError(f"Unsupported format: {file_fmt}. Use 'jsonl', 'text', or 'parquet'.")
+            raise ValueError(
+                f"Unsupported format: {file_fmt}. Use 'jsonl', 'text', or 'parquet'.")
 
     return count_tokens_in_texts(
         _iter(),
@@ -2040,223 +2130,248 @@ def print_token_distribution_report(
 
 
 # ---------------------------------------------------------------------------
-# __main__ demo â€” runs when invoked as: python token_tracker.py --demo-tc <path>
-# Existing default invocation (DAYS arg) is unaffected.
+# CLI
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__" and "--demo-tc" in sys.argv:
-    import argparse as _argparse
-
-    _p = _argparse.ArgumentParser(
-        description="C4AI token-counter demo (vendored into token_tracker.py)"
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="token_tracker.py",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Cross-provider token usage monitor. Reports input / output / cache-read / "
+            "reasoning tokens by company (Claude Code, Google Antigravity, OpenAI Codex, "
+            "Gemini CLI, + Fleet ledger) and by day, over any range you ask for."
+        ),
+        epilog=(
+            "ranges (most specific wins: --start/--end > --month > --compare > --weeks > --days > positional)\n"
+            "  token_tracker.py                                    last 2 days (default)\n"
+            "  token_tracker.py 7                                  last 7 days (legacy positional)\n"
+            "  token_tracker.py --days 7                           last 7 days\n"
+            "  token_tracker.py --weeks 2                          last 14 days\n"
+            "  token_tracker.py --month 2026-06                    a calendar month\n"
+            "  token_tracker.py --start 2026-06-11 --end 2026-06-18   explicit inclusive range\n"
+            "  token_tracker.py --compare 7                        last 7d vs prior 7d, per company\n"
+            "  token_tracker.py 7 --by-provider                   group the Fleet ledger by provider\n"
+            "\nenv: TOKEN_TRACKER_CUTOFF=<iso8601> overrides the lower bound."
+        ),
     )
-    _p.add_argument("--demo-tc", metavar="PATH", help="File to count tokens in")
-    _p.add_argument("--field", default="text", help="JSON field to extract (JSONL/Parquet)")
-    _p.add_argument(
-        "--format", default="jsonl", choices=["jsonl", "text", "parquet"],
-        dest="file_fmt", help="Input format"
+    parser.add_argument("days_pos", nargs="?", type=int, default=None,
+                        help="legacy positional: days back from now (default 2)")
+    parser.add_argument("--days", type=int, default=None, help="days back from now")
+    parser.add_argument("--weeks", type=int, default=None,
+                        help="weeks back from now (7*N days)")
+    parser.add_argument("--start", metavar="YYYY-MM-DD", default=None,
+                        help="explicit window start, inclusive")
+    parser.add_argument("--end", metavar="YYYY-MM-DD", default=None,
+                        help="explicit window end, inclusive (default = now)")
+    parser.add_argument("--month", metavar="YYYY-MM", default=None,
+                        help="restrict the window to a calendar month")
+    parser.add_argument("--compare", type=int, metavar="N", default=None,
+                        help="compare the last N days vs the prior N days, per company")
+    parser.add_argument("--lanes", action="store_true",
+                        help="full analytics dashboard: 24h/WTD/MTD/QTD/HTD/YTD "
+                             "comparisons + records (highest day/week/month/streak)")
+    parser.add_argument("--by-provider", action="store_true",
+                        help="group the Fleet usage ledger rows by provider")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="log skipped files / RPC probes to stderr")
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {__version__}")
+    # --demo-tc subcommand (vendored C4AI token-counter)
+    demo = parser.add_argument_group("token-counter demo (vendored C4AI core)")
+    demo.add_argument("--demo-tc", metavar="PATH", default=None,
+                      help="count tokenizer tokens in a file and exit")
+    demo.add_argument("--field", default="text",
+                      help="JSON field to extract (JSONL/Parquet)")
+    demo.add_argument("--format", default="jsonl",
+                      choices=["jsonl", "text", "parquet"], dest="file_fmt",
+                      help="demo input format")
+    demo.add_argument("--model", default=DEFAULT_TC_MODEL,
+                      help="HuggingFace tokenizer model for the demo")
+    demo.add_argument("--max-docs", type=int, default=None,
+                      help="max documents to process in the demo")
+    return parser
+
+
+def resolve_days(args: argparse.Namespace) -> int:
+    """Days of history to collect, honoring flag precedence and wide modes."""
+    days = DEFAULT_DAYS
+    if args.days is not None:
+        days = args.days
+    elif args.weeks is not None:
+        days = args.weeks * 7
+    elif args.days_pos is not None:
+        days = args.days_pos
+    # --compare widens the collection window so both periods are gathered.
+    if args.compare is not None and args.compare > 0:
+        days = max(days, args.compare * 2)
+    if args.lanes:
+        days = max(days, LANES_HISTORY_DAYS)
+    return days
+
+
+def resolve_window(args: argparse.Namespace) -> Window:
+    days = resolve_days(args)
+    if args.start or args.end:
+        return Window.from_range(args.start, args.end, days)
+    if args.month:
+        try:
+            return Window.from_month(args.month)
+        except (ValueError, IndexError) as exc:
+            print(f"Error parsing --month {args.month}: {exc}")
+            raise SystemExit(1)
+    return Window.last_days(days)
+
+
+def _print_window_header(args: argparse.Namespace, window: Window) -> None:
+    print("\n======================================================================")
+    if args.start or args.end:
+        print(f"Token usage monitor — range {window.cutoff:%Y-%m-%d} -> "
+              f"{window.limit_upper - timedelta(days=1):%Y-%m-%d}")
+        print(f"window: {window.cutoff:%Y-%m-%d %H:%M} -> "
+              f"{window.limit_upper:%Y-%m-%d %H:%M} {window.now:%Z}")
+    elif args.month:
+        print(f"Token usage monitor — Month: {args.month}")
+        print(f"window: {window.cutoff:%Y-%m-%d %H:%M} -> "
+              f"{window.limit_upper:%Y-%m-%d %H:%M} {window.now:%Z}")
+    elif args.compare:
+        print(f"Token usage monitor — compare last {args.compare}d vs prior "
+              f"{args.compare}d (collecting {window.days} days)")
+        print(f"window: {window.cutoff:%Y-%m-%d %H:%M} -> "
+              f"{window.now:%Y-%m-%d %H:%M} {window.now:%Z}")
+    else:
+        print(f"Token usage monitor — last {window.days} day(s)")
+        print(f"window: {window.cutoff:%Y-%m-%d %H:%M} -> "
+              f"{window.now:%Y-%m-%d %H:%M} {window.now:%Z}")
+    print("======================================================================\n")
+
+
+def run_demo_tc(args: argparse.Namespace) -> int:
+    """--demo-tc PATH: run the vendored C4AI token-counter and exit."""
+    print(f"[token-counter demo] Loading tokenizer: {args.model}")
+    print(f"[token-counter demo] Input: {args.demo_tc}  "
+          f"format={args.file_fmt}  field={args.field}")
+    stats = count_tokens_in_file(
+        args.demo_tc,
+        field=args.field,
+        file_fmt=args.file_fmt,
+        model=args.model,
+        max_docs=args.max_docs,
     )
-    _p.add_argument("--model", default=DEFAULT_TC_MODEL, help="HuggingFace tokenizer model")
-    _p.add_argument("--max-docs", type=int, default=None, help="Max documents to process")
-    _args = _p.parse_args()
+    print_token_distribution_report(
+        stats, title=f"Token Distribution -- {args.demo_tc}")
+    print(f"\n[token-counter demo] Wall time: {stats.wall_time:.2f}s")
+    return 0
 
-    print(f"[token-counter demo] Loading tokenizer: {_args.model}")
-    print(f"[token-counter demo] Input: {_args.demo_tc}  format={_args.file_fmt}  field={_args.field}")
-    _tc_stats = count_tokens_in_file(
-        _args.demo_tc,
-        field=_args.field,
-        file_fmt=_args.file_fmt,
-        model=_args.model,
-        max_docs=_args.max_docs,
+
+def run_report(args: argparse.Namespace) -> int:
+    """Scan every source for the resolved window and render the full report."""
+    window = resolve_window(args)
+    _print_window_header(args, window)
+
+    # 1. Claude Code
+    claude = parse_claude(window)
+    print("--- Claude Code ---")
+    print(f"Transcripts scanned: {claude.files_scanned}   "
+          f"Usage records: {claude.records}\n")
+    print_day_table(claude.usage.by_day, claude.usage.totals)
+    print()
+
+    # 2. Google Antigravity
+    anti = parse_antigravity(window)
+    print("--- Google Antigravity (Hybrid RPC & Estimation) "
+          "[! partial - Antigravity retention starts ~2026-05-19; pre-May encrypted] ---")
+    print(f"Sessions scanned: {anti.sessions_scanned} ({anti.active_sessions} active "
+          f"via RPC + {anti.fallback_transcripts} fallback from disk)")
+    print(f"Invocations tracked: {anti.records} ({anti.rpc_records} exact via RPC "
+          f"+ {anti.estimated_records} estimated fallback)\n")
+    print_day_table(anti.usage.by_day, anti.usage.totals)
+    print()
+    compute_and_print_split(anti.usage.invocations, "Antigravity")
+
+    # 3. OpenAI Codex
+    codex = parse_codex(window)
+    print("--- OpenAI Codex (Granular Rollout Parsing) ---")
+    print(f"Sessions scanned: {codex.sessions_scanned}   "
+          f"Usage events: {codex.records}\n")
+    print_day_table(codex.usage.by_day, codex.usage.totals)
+    # Cross-check our rollout parse against Codex's OWN native counter. Compare
+    # like with like: Codex's tokens_used excludes cache-reads, so validate
+    # against our non-cache billable tokens (input w/CC + output + reasoning),
+    # and note cache separately rather than inflating the delta.
+    txi, txo, _txcc, txcr, txrt = cols(codex.usage.totals)
+    nthreads, native = codex_native_total(window)
+    billable = txi + txo + txrt
+    if native:
+        delta = (billable - native) / native * 100
+        print(f"  cross-check: Codex native (threads.tokens_used) {fmt(native)} "
+              f"across {nthreads} threads "
+              f"| our billable (in+out+reasoning, no cache) {fmt(billable)} "
+              f"| delta {delta:+.0f}% "
+              f"(+{fmt(txcr)} cache-read tracked separately)")
+    print()
+
+    # 3b. Gemini CLI (pre-May history fills here)
+    gemini = parse_gemini_cli(window)
+    print("--- Gemini CLI (Hybrid Exact & Estimation) ---")
+    print(f"Sessions scanned: {gemini.files_scanned}   Invocations tracked: "
+          f"{gemini.records} ({gemini.exact_records} exact + "
+          f"{gemini.estimated_records} estimated)\n")
+    print_day_table(gemini.usage.by_day, gemini.usage.totals)
+    print()
+    compute_and_print_split(gemini.usage.invocations, "Gemini CLI")
+
+    # 3d. Fleet usage ledger
+    fleet = parse_fleet_usage(window)
+    print("--- Fleet Usage Ledger (Local Ollama/Gemma + OpenRouter + HF) ---")
+    print(f"Invocations tracked: {fleet.records} "
+          "(exact, from each lane's API response)\n")
+    print_day_table(fleet.usage.by_day, fleet.usage.totals)
+    print()
+
+    # 4. Cross-source aggregates
+    scans = (claude.usage, anti.usage, codex.usage, gemini.usage, fleet.usage)
+    all_models = merge_by_model(scans)
+    all_invocations: List[Invocation] = []
+    for agg in scans:
+        all_invocations.extend(agg.invocations)
+
+    if all_models:
+        print_model_breakdown_and_bill(all_models)
+        compute_and_print_split(all_invocations, "Blended Report")
+        print_cache_health_report(all_invocations)
+        print_model_class_buckets(all_invocations)
+        print_top_hogs(all_invocations)
+        print_route_recommendations(all_invocations)
+        if args.by_provider:
+            print_by_provider_summary(all_invocations)
+
+    print()
+
+    if args.compare:
+        print_period_comparison(all_invocations, window.now, args.compare)
+
+    if args.lanes:
+        print()
+        print(SEP_70)
+        print(f"Token usage analytics  (history through {window.now:%Y-%m-%d})")
+        print(SEP_70)
+        print_analytics_dashboard(all_invocations, window.now)
+
+    return 0
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args, _unknown = build_parser().parse_known_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
     )
-    print_token_distribution_report(_tc_stats, title=f"Token Distribution -- {_args.demo_tc}")
-    print(f"\n[token-counter demo] Wall time: {_tc_stats.wall_time:.2f}s")
+    if args.demo_tc:
+        return run_demo_tc(args)
+    return run_report(args)
 
 
-# ---------------------------------------------------------------------------
-# --compare N : last N days vs the prior N days, per company (additive summary).
-# Reads the already-collected ALL_INVOCATIONS; the window was widened to >= 2N days
-# at parse time so both periods are present. Runs after the normal report.
-# ---------------------------------------------------------------------------
-if __name__ == "__main__" and COMPARE_N:
-    _n = COMPARE_N
-    _mid = NOW - timedelta(days=_n)
-    _lo = NOW - timedelta(days=_n * 2)
-
-    def _company(src):
-        return (src or "unknown").split(" (")[0].split(":")[0].strip()
-
-    def _toks(inv):
-        return (inv.get("input_tokens", 0) + inv.get("output_tokens", 0)
-                + inv.get("cache_creation", 0) + inv.get("cache_read", 0)
-                + inv.get("reasoning", 0))
-
-    _cur = defaultdict(int)
-    _prev = defaultdict(int)
-    for _inv in ALL_INVOCATIONS:
-        _ts = _inv.get("timestamp")
-        if _ts is None:
-            continue
-        if _ts >= _mid:
-            _cur[_company(_inv.get("source"))] += _toks(_inv)
-        elif _ts >= _lo:
-            _prev[_company(_inv.get("source"))] += _toks(_inv)
-
-    _companies = sorted(set(_cur) | set(_prev), key=lambda c: -(_cur[c] + _prev[c]))
-    _sep = "-" * 70
-    print()
-    print("=" * 70)
-    print(f"Period comparison — last {_n}d vs prior {_n}d (total tokens, by company)")
-    print(f"  last {_n}d : {_mid:%Y-%m-%d} -> {NOW:%Y-%m-%d}")
-    print(f"  prior {_n}d: {_lo:%Y-%m-%d} -> {_mid:%Y-%m-%d}")
-    print("=" * 70)
-    print(f"{'Company':<22}{'prior ' + str(_n) + 'd':>16}{'last ' + str(_n) + 'd':>16}{'delta':>12}")
-    print(_sep)
-    _tc = _tp = 0
-    for _c in _companies:
-        _p = _prev[_c]
-        _cu = _cur[_c]
-        _tc += _cu
-        _tp += _p
-        _d = f"{(_cu - _p) / _p * 100:+.0f}%" if _p else ("new" if _cu else "-")
-        print(f"{_c:<22}{_p:>16,}{_cu:>16,}{_d:>12}")
-    print(_sep)
-    _dt = f"{(_tc - _tp) / _tp * 100:+.0f}%" if _tp else "-"
-    print(f"{'TOTAL':<22}{_tp:>16,}{_tc:>16,}{_dt:>12}")
-    print("=" * 70)
-
-
-# ---------------------------------------------------------------------------
-# --lanes : full analytics dashboard. Period comparisons (24h / week / month /
-# quarter / half / year, each "to-date" vs the same elapsed offset into the
-# prior period) plus records (highest day/week/month + longest & current
-# streak). One pass builds a per-day series; every lane is date math on it.
-# Drafted on gemma4:31b-cloud (free lane); boundary math reviewed by Coach.
-# ---------------------------------------------------------------------------
-def print_analytics_dashboard(invocations, now):
-    def humanize(n):
-        n = int(n)
-        if n == 0:
-            return "0"
-        for unit, val in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
-            if abs(n) >= val:
-                return f"{n / val:.2f}{unit}"
-        return str(n)
-
-    def delta(this, last):
-        if last == 0:
-            return "new" if this > 0 else "-"
-        return f"{(this - last) / last:+.0%}"
-
-    today = now.date()
-    day_sums = defaultdict(int)
-    records = []
-    for inv in invocations:
-        ts = inv.get("timestamp")
-        if ts is None:
-            continue
-        toks = sum(inv.get(k, 0) for k in
-                   ("input_tokens", "output_tokens", "cache_creation", "cache_read", "reasoning"))
-        day_sums[ts.date()] += toks
-        records.append((ts, toks))
-
-    if not records:
-        print("no data")
-        return None
-
-    def dsum(lo, hi):  # inclusive day-range sum over the per-day series
-        total = 0
-        cur = lo
-        while cur <= hi:
-            total += day_sums.get(cur, 0)
-            cur += _dtm.timedelta(days=1)
-        return total
-
-    lanes = []
-    # 24h rolling (timestamp precision)
-    lanes.append(("this 24h / prior 24h",
-                  sum(t for ts, t in records if now - _dtm.timedelta(hours=24) <= ts < now),
-                  sum(t for ts, t in records if now - _dtm.timedelta(hours=48) <= ts < now - _dtm.timedelta(hours=24))))
-    # week-to-date (Mon start)
-    ws = today - _dtm.timedelta(days=today.weekday())
-    off = (today - ws).days
-    lanes.append(("this week / last week", dsum(ws, today),
-                  dsum(ws - _dtm.timedelta(days=7), ws - _dtm.timedelta(days=7 - off))))
-    # month-to-date
-    ms = today.replace(day=1)
-    off = (today - ms).days
-    lme = ms - _dtm.timedelta(days=1)
-    lms = lme.replace(day=1)
-    lanes.append(("this month / last month", dsum(ms, today),
-                  dsum(lms, min(lms + _dtm.timedelta(days=off), lme))))
-    # quarter-to-date (3mo)
-    qm = ((today.month - 1) // 3) * 3 + 1
-    qs = _dtm.date(today.year, qm, 1)
-    off = (today - qs).days
-    pqs = _dtm.date(today.year if qm > 1 else today.year - 1, qm - 3 if qm > 1 else 10, 1)
-    lanes.append(("this quarter / last (3mo)", dsum(qs, today),
-                  dsum(pqs, min(pqs + _dtm.timedelta(days=off), qs - _dtm.timedelta(days=1)))))
-    # half-to-date (6mo)
-    hm = 1 if today.month <= 6 else 7
-    hs = _dtm.date(today.year, hm, 1)
-    off = (today - hs).days
-    phs = _dtm.date(today.year if hm > 1 else today.year - 1, hm - 6 if hm > 1 else 7, 1)
-    lanes.append(("this half / last (6mo)", dsum(hs, today),
-                  dsum(phs, min(phs + _dtm.timedelta(days=off), hs - _dtm.timedelta(days=1)))))
-    # year-to-date
-    ys = _dtm.date(today.year, 1, 1)
-    off = (today - ys).days
-    lys = _dtm.date(today.year - 1, 1, 1)
-    lanes.append(("this year / last year", dsum(ys, today),
-                  dsum(lys, min(lys + _dtm.timedelta(days=off), _dtm.date(today.year - 1, 12, 31)))))
-
-    print(f"{'Lane':<28}{'this':>14}{'prior':>14}{'delta':>9}")
-    print("-" * 65)
-    for name, t, l in lanes:
-        print(f"{name:<28}{humanize(t):>14}{humanize(l):>14}{delta(t, l):>9}")
-
-    print()
-    print("Records (full history)")
-    print("-" * 65)
-    md = max(day_sums, key=day_sums.get)
-    print(f"  Highest Day:    {md} ({humanize(day_sums[md])})")
-    weeks, months = defaultdict(int), defaultdict(int)
-    for d, v in day_sums.items():
-        weeks[d.isocalendar()[:2]] += v
-        months[(d.year, d.month)] += v
-    mw = max(weeks, key=weeks.get)
-    print(f"  Highest Week:   {mw[0]}-W{mw[1]:02d} ({humanize(weeks[mw])})")
-    mm = max(months, key=months.get)
-    print(f"  Highest Month:  {mm[0]}-{mm[1]:02d} ({humanize(months[mm])})")
-
-    dates = sorted(day_sums)
-    best = cur = 0
-    bstart = bend = tstart = dates[0]
-    cd = dates[0]
-    while cd <= dates[-1]:
-        if day_sums.get(cd, 0) > 0:
-            if cur == 0:
-                tstart = cd
-            cur += 1
-            if cur > best:
-                best, bstart, bend = cur, tstart, cd
-        else:
-            cur = 0
-        cd += _dtm.timedelta(days=1)
-    cstreak = 0
-    cd = today if day_sums.get(today, 0) > 0 else today - _dtm.timedelta(days=1)
-    while day_sums.get(cd, 0) > 0:
-        cstreak += 1
-        cd -= _dtm.timedelta(days=1)
-    print(f"  Longest Streak: {best} days ({bstart}..{bend})")
-    print(f"  Current Streak: {cstreak} days")
-    return None
-
-
-if __name__ == "__main__" and LANES:
-    print()
-    print("=" * 70)
-    print(f"Token usage analytics  (history through {NOW:%Y-%m-%d})")
-    print("=" * 70)
-    print_analytics_dashboard(ALL_INVOCATIONS, NOW)
-
+if __name__ == "__main__":
+    sys.exit(main())

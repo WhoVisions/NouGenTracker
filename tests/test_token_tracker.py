@@ -6,6 +6,7 @@ deterministic pricing logic — no reliance on any user's local logs.
 """
 import importlib.util
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -13,6 +14,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def _load(name, filename):
     spec = importlib.util.spec_from_file_location(name, ROOT / filename)
     mod = importlib.util.module_from_spec(spec)
+    # Register before exec (the documented importlib recipe) — dataclasses with
+    # PEP 563 string annotations resolve their module through sys.modules.
+    sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
