@@ -67,6 +67,44 @@ def test_reasoning_billed_at_output_rate():
     assert abs(cost - 25.0) < 1e-6  # output rate
 
 
+def test_config_file_overlay(tmp_path, monkeypatch):
+    """TOKEN_TRACKER_CONFIG json overrides paths, knobs, pricing, free lanes."""
+    import json
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({
+        "chars_per_token": 5,
+        "input_warn_threshold": 111,
+        "model_pricing": {"my-model": [1.0, 2.0, 0.1, "doc"]},
+        "free_models": ["my-free:latest"],
+        "model_map": {"RAW_ID_X": "mapped-x"},
+    }))
+    monkeypatch.setenv("TOKEN_TRACKER_CONFIG", str(cfg))
+    mod = _load("token_tracker_cfg_overlay", "token_tracker.py")
+    assert mod.CHARS_PER_TOKEN == 5
+    assert mod.INPUT_WARN_THRESHOLD == 111
+    assert mod.price_for("my-model")[:3] == (1.0, 2.0, 0.1)
+    assert mod.price_for("my-free:latest")[:3] == (0.0, 0.0, 0.0)
+    assert mod.resolve_model("RAW_ID_X") == "mapped-x"
+
+
+def test_env_beats_config_file(tmp_path, monkeypatch):
+    """A knob's uppercased env var wins over the config file value."""
+    import json
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"context_overhead_tokens": 9999}))
+    monkeypatch.setenv("TOKEN_TRACKER_CONFIG", str(cfg))
+    monkeypatch.setenv("CONTEXT_OVERHEAD_TOKENS", "1234")
+    mod = _load("token_tracker_env_beats_cfg", "token_tracker.py")
+    assert mod.CONTEXT_OVERHEAD_TOKENS == 1234
+
+
+def test_missing_config_file_uses_defaults(monkeypatch):
+    monkeypatch.setenv("TOKEN_TRACKER_CONFIG", "definitely-not-a-real-file.json")
+    mod = _load("token_tracker_no_cfg", "token_tracker.py")
+    assert mod.CHARS_PER_TOKEN == 4
+    assert mod.CACHE_WRITE_MULTIPLIER == 1.25
+
+
 def test_audit_rubric_is_ten_points_and_runs():
     ad = _load("audit_daemon", "audit_daemon.py")
     rep = ad.audit()

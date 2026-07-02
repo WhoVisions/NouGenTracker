@@ -18,9 +18,27 @@ Sources
                       for local Ollama/Gemma, OpenRouter, and HF lanes (exact).
 
 Importing this module is side-effect free: nothing is scanned and nothing is
-printed until :func:`main` runs. Public helpers (``price_for``, ``model_bill``,
+printed until :func:`main` runs (the one optional read is the small JSON
+config overlay below). Public helpers (``price_for``, ``model_bill``,
 ``resolve_model``, ``parse_ts``, the C4AI token-counter port, …) are importable
 by other tools (e.g. ``hi_token_tracker.py``) without touching ``sys.argv``.
+
+Configuration
+-------------
+Nothing is hardcoded-only. Every knob resolves with this precedence:
+
+1. environment variable (the knob name uppercased, e.g. ``CHARS_PER_TOKEN``)
+2. the JSON overlay file named by ``TOKEN_TRACKER_CONFIG``
+   (default: ``tracker_config.json`` beside this script — see
+   ``tracker_config.example.json`` for every supported key)
+3. the built-in default, so the tool always runs with zero setup
+
+Overridable: all source paths (``claude_projects_dir``,
+``antigravity_brain_dirs``, ``codex_state_db``, ``gemini_cli_tmp_dir``,
+``fleet_usage_ledger``), the model catalog (``model_map``, ``model_pricing``,
+``default_pricing``, ``free_models``, ``settings_model_rules``), provider
+labels/order, every heuristic and threshold, RPC endpoints/timeouts, report
+sizes, and the token-counter demo defaults.
 """
 from __future__ import annotations
 
@@ -45,6 +63,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     Iterator,
@@ -56,7 +75,7 @@ from typing import (
     Tuple,
 )
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 LOG = logging.getLogger("nougentracker")
 
@@ -74,56 +93,134 @@ KEYS: Tuple[str, ...] = (
 TokenCounts = Dict[str, int]
 
 # ---------------------------------------------------------------------------
-# Paths & environment
+# Configuration engine — every knob below resolves dynamically:
+#   1. environment variable (knob name uppercased)   — per-run override
+#   2. TOKEN_TRACKER_CONFIG json overlay (optional)  — per-machine override
+#   3. built-in default                              — zero-setup fallback
 # ---------------------------------------------------------------------------
 
-PROJECTS = os.path.expanduser(os.path.join("~", ".claude", "projects"))
+TRACKER_CONFIG_PATH = os.environ.get(
+    "TOKEN_TRACKER_CONFIG",
+    str(Path(__file__).resolve().parent / "tracker_config.json"),
+)
 
+
+def _load_tracker_config(path: str) -> Dict[str, Any]:
+    """Read the optional JSON overlay; malformed files degrade to defaults."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            raise ValueError("config root must be a JSON object")
+        return data
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        LOG.warning("ignoring unreadable config %s: %s", path, exc)
+        return {}
+
+
+CONFIG: Dict[str, Any] = _load_tracker_config(TRACKER_CONFIG_PATH)
+
+
+def _cfg(name: str, default: Any, cast: Callable[[Any], Any] = str) -> Any:
+    """Resolve one knob: env var beats config file beats built-in default."""
+    env_val = os.environ.get(name.upper())
+    if env_val:
+        try:
+            return cast(env_val)
+        except (TypeError, ValueError):
+            LOG.warning("bad env %s=%r; falling back", name.upper(), env_val)
+    if name in CONFIG:
+        try:
+            return cast(CONFIG[name])
+        except (TypeError, ValueError):
+            LOG.warning("bad config %s=%r; using default", name, CONFIG[name])
+    return default
+
+
+def _as_path_list(val: Any) -> List[str]:
+    """Accept a JSON list or an os.pathsep-separated env string."""
+    if isinstance(val, str):
+        return [p for p in val.split(os.pathsep) if p]
+    return [str(p) for p in val]
+
+
+# ---------------------------------------------------------------------------
+# Paths & environment (all env/config overridable — see module docstring)
+# ---------------------------------------------------------------------------
+
+PROJECTS = os.path.expanduser(
+    _cfg("claude_projects_dir", os.path.join("~", ".claude", "projects")))
+
+_DEFAULT_BRAIN_DIRS = [
+    os.path.join("~", ".gemini", flavor, "brain")
+    for flavor in ("antigravity", "antigravity-cli", "antigravity-ide",
+                   "antigravity-backup")
+]
 ANTIGRAVITY_BRAIN_DIRS: List[str] = [
-    os.path.expanduser(os.path.join("~", ".gemini", "antigravity", "brain")),
-    os.path.expanduser(os.path.join("~", ".gemini", "antigravity-cli", "brain")),
-    os.path.expanduser(os.path.join("~", ".gemini", "antigravity-ide", "brain")),
-    os.path.expanduser(os.path.join("~", ".gemini", "antigravity-backup", "brain")),
+    os.path.expanduser(p)
+    for p in _cfg("antigravity_brain_dirs", _DEFAULT_BRAIN_DIRS, cast=_as_path_list)
 ]
 
-CODEX_STATE = os.path.expanduser(os.path.join("~", ".codex", "state_5.sqlite"))
+CODEX_STATE = os.path.expanduser(
+    _cfg("codex_state_db", os.path.join("~", ".codex", "state_5.sqlite")))
 
 # Fleet usage ledger: forward token accounting for local Ollama/Gemma,
 # OpenRouter, HF and other lanes that otherwise write no token telemetry to
 # disk. Written by fleet/fleet_usage_proxy.py + the instrumented fleet clients.
-FLEET_USAGE_LEDGER = os.environ.get(
-    "FLEET_USAGE_LEDGER",
+FLEET_USAGE_LEDGER = _cfg(
+    "fleet_usage_ledger",
     str(Path(__file__).resolve().parent / "vault" / "fleet_usage.jsonl"),
 )
 
-# The Gemini CLI stores conversations under ~/.gemini/tmp/<project>/chats/ as
-# either a single .json file with a messages[] array, or .jsonl one msg/line.
-# These hold message TEXT only — no usageMetadata — so tokens are ESTIMATED
-# via the same chars/4 heuristic the Antigravity fallback uses. This is the
-# ONLY source for pre-May 2026 Gemini activity (the Antigravity brain
-# transcripts only go back to ~2026-05-19).
+# The Gemini CLI stores conversations under <tmp>/<project>/chats/ as either
+# a single .json file with a messages[] array, or .jsonl one msg/line. These
+# hold message TEXT only — no usageMetadata — so tokens are ESTIMATED via the
+# same chars-per-token heuristic the Antigravity fallback uses.
+GEMINI_CLI_TMP_DIR = os.path.expanduser(
+    _cfg("gemini_cli_tmp_dir", os.path.join("~", ".gemini", "tmp")))
 GEMINI_CLI_CHAT_GLOBS: List[str] = [
-    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*.json")),
-    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*.jsonl")),
-    os.path.expanduser(os.path.join("~", ".gemini", "tmp", "*", "chats", "*", "*.jsonl")),
+    os.path.join(GEMINI_CLI_TMP_DIR, "*", "chats", "*.json"),
+    os.path.join(GEMINI_CLI_TMP_DIR, "*", "chats", "*.jsonl"),
+    os.path.join(GEMINI_CLI_TMP_DIR, "*", "chats", "*", "*.jsonl"),
 ]
 
-DEFAULT_DAYS = 2
+DEFAULT_DAYS = _cfg("token_tracker_default_days", 2, int)
 # --lanes loads the full available history for the analytics dashboard.
-LANES_HISTORY_DAYS = 760
+LANES_HISTORY_DAYS = _cfg("lanes_history_days", 760, int)
 
 # Estimation heuristic shared by the Antigravity fallback and Gemini CLI
-# parsers: ~4 characters per token, plus a flat per-call context overhead
+# parsers: ~N characters per token, plus a flat per-call context overhead
 # (system prompt, tool schemas) that never appears in the transcript text.
-CHARS_PER_TOKEN = 4
-CONTEXT_OVERHEAD_TOKENS = 6_000
+CHARS_PER_TOKEN = _cfg("chars_per_token", 4, int)
+CONTEXT_OVERHEAD_TOKENS = _cfg("context_overhead_tokens", 6_000, int)
 
 # Cache-health thresholds (cache-read share of all tokens).
-CACHE_SHARE_EXCELLENT = 0.95
-CACHE_SHARE_GOOD = 0.85
-CACHE_SHARE_WARNING = 0.60
+CACHE_SHARE_EXCELLENT = _cfg("cache_share_excellent", 0.95, float)
+CACHE_SHARE_GOOD = _cfg("cache_share_good", 0.85, float)
+CACHE_SHARE_WARNING = _cfg("cache_share_warning", 0.60, float)
 # Fresh-input volume above which a model/session is flagged, regardless of share.
-INPUT_WARN_THRESHOLD = 250_000
+INPUT_WARN_THRESHOLD = _cfg("input_warn_threshold", 250_000, int)
+
+# Cache-creation bills at this multiple of the fresh-input rate
+# (the 5-minute cache-write tier on Anthropic's price sheet).
+CACHE_WRITE_MULTIPLIER = _cfg("cache_write_multiplier", 1.25, float)
+
+# Report sizes.
+TOP_HOGS_COUNT = _cfg("top_hogs_count", 20, int)
+TOP_SESSIONS_COUNT = _cfg("top_sessions_count", 10, int)
+
+# Model assumed for transcripts that never record a model switch.
+ANTIGRAVITY_DEFAULT_MODEL = _cfg("antigravity_default_model", "gemini-3-flash-preview")
+GEMINI_CLI_DEFAULT_MODEL = _cfg("gemini_cli_default_model", ANTIGRAVITY_DEFAULT_MODEL)
+
+# Antigravity loopback RPC endpoint.
+RPC_HOST = _cfg("antigravity_rpc_host", "127.0.0.1")
+RPC_SERVICE = _cfg("antigravity_rpc_service",
+                   "exa.language_server_pb.LanguageServerService")
+RPC_HEARTBEAT_TIMEOUT = _cfg("antigravity_rpc_timeout", 1.5, float)
+RPC_QUERY_TIMEOUT = _cfg("antigravity_rpc_query_timeout", 3.0, float)
 
 # ---------------------------------------------------------------------------
 # Model catalog
@@ -198,11 +295,30 @@ MODEL_MAP: Dict[str, str] = {
     'models/gemini-2.5-flash-native-audio-preview-12-2025': 'gemini-2.5-flash-native-audio-preview-12-2025',
     'models/gemini-3.1-flash-live-preview': 'gemini-3.1-flash-live-preview',
 }
+# Overlay: {"model_map": {"raw-id": "display-name"}} in the config file.
+MODEL_MAP.update({str(k): str(v)
+                  for k, v in (CONFIG.get("model_map") or {}).items()})
+
+
+def _config_settings_rules() -> Tuple[Tuple[Tuple[str, ...], str], ...]:
+    """Extra model-switch detection rules from the config overlay, tried
+    before the built-ins. Format: [[["needle", ...], "model-name"], ...]."""
+    rules: List[Tuple[Tuple[str, ...], str]] = []
+    for entry in CONFIG.get("settings_model_rules") or []:
+        try:
+            needles, model = entry
+            if isinstance(needles, str):
+                needles = [needles]
+            rules.append((tuple(str(n).lower() for n in needles), str(model)))
+        except (TypeError, ValueError):
+            LOG.warning("skipping bad settings_model_rules entry: %r", entry)
+    return tuple(rules)
+
 
 # Antigravity fallback transcripts record model switches as free-text
 # <USER_SETTINGS_CHANGE> blobs. Ordered longest-match-first: the first entry
-# whose every needle appears in the lowercased blob wins.
-_SETTINGS_MODEL_RULES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
+# whose any needle appears in the lowercased blob wins. Config rules first.
+_BUILTIN_SETTINGS_MODEL_RULES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
     (("gemini 3.5 flash (high)",), "gemini-3.5-flash-high"),
     (("gemini 3.5 flash (medium)",), "gemini-3.5-flash-medium"),
     (("gemini 3.5 flash (low)",), "gemini-3.5-flash-low"),
@@ -219,6 +335,7 @@ _SETTINGS_MODEL_RULES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
     (("gemini 3 flash",), "gemini-3-flash-preview"),
     (("gemini 3",), "gemini-3-flash-preview"),
 )
+_SETTINGS_MODEL_RULES = _config_settings_rules() + _BUILTIN_SETTINGS_MODEL_RULES
 
 _SETTINGS_CHANGE_RE = re.compile(
     r"<USER_SETTINGS_CHANGE>\s*The user changed setting `Model Selection` "
@@ -336,8 +453,27 @@ MODEL_PRICING: Dict[str, Pricing] = {
     "gpt-oss-120b-medium":        Pricing(0.10, 0.40, 0.010, EST),
 }
 
+def _pricing_from_row(row: Any) -> Pricing:
+    """Build a Pricing from a config row [input, output, cache_read, source?]."""
+    return Pricing(float(row[0]), float(row[1]), float(row[2]),
+                   str(row[3]) if len(row) > 3 else EST)
+
+
+# Overlay: {"model_pricing": {"model": [in, out, cache_read, "doc"|"est"]}}.
+for _name, _row in (CONFIG.get("model_pricing") or {}).items():
+    try:
+        MODEL_PRICING[str(_name)] = _pricing_from_row(_row)
+    except (TypeError, ValueError, IndexError):
+        LOG.warning("skipping bad model_pricing row for %r: %r", _name, _row)
+
 # Unknown model: conservative estimate so the bill never silently reads $0.
-DEFAULT_PRICING = Pricing(1.00, 4.00, 0.100, EST)
+_DEFAULT_PRICING_ROW = CONFIG.get("default_pricing")
+try:
+    DEFAULT_PRICING = (_pricing_from_row(_DEFAULT_PRICING_ROW)
+                       if _DEFAULT_PRICING_ROW else Pricing(1.00, 4.00, 0.100, EST))
+except (TypeError, ValueError, IndexError):
+    LOG.warning("skipping bad default_pricing row: %r", _DEFAULT_PRICING_ROW)
+    DEFAULT_PRICING = Pricing(1.00, 4.00, 0.100, EST)
 
 # Local Ollama/Gemma models and OpenRouter ':free' routes cost $0 — they are
 # tracked for VOLUME, not spend (the fleet enforces a hard-free policy).
@@ -345,6 +481,8 @@ FREE_LOCAL_MODELS = {
     "dav1d:e2b", "sol-ai:e4b", "kaedra:e4b", "iris-ai:e4b",
     "gemma4-aggressive:e4b", "gemma4-aggressive:e2b", "gemma2:2b", "gemma:2b",
 }
+# Overlay: {"free_models": ["name", ...]}.
+FREE_LOCAL_MODELS |= {str(m) for m in CONFIG.get("free_models") or []}
 
 FREE_PRICING = Pricing(0.0, 0.0, 0.0, DOC)
 
@@ -364,14 +502,14 @@ def price_for(model_name: Optional[str]) -> Pricing:
 def model_bill(model_name: Optional[str], d: Mapping[str, int]) -> Tuple[float, str]:
     """Honest API-equivalent cost (USD) for one model's token bucket.
 
-    Cache-reads are billed at their discounted rate, cache-creation at 1.25x
-    input, and reasoning at the output rate — the way a real invoice prices
-    them. Returns (cost_usd, source_tag).
+    Cache-reads are billed at their discounted rate, cache-creation at
+    CACHE_WRITE_MULTIPLIER x input, and reasoning at the output rate — the way
+    a real invoice prices them. Returns (cost_usd, source_tag).
     """
     pricing = price_for(model_name)
     cost = (
         d.get("input_tokens", 0) * pricing.input
-        + d.get("cache_creation_input_tokens", 0) * pricing.input * 1.25
+        + d.get("cache_creation_input_tokens", 0) * pricing.input * CACHE_WRITE_MULTIPLIER
         + d.get("cache_read_input_tokens", 0) * pricing.cache_read
         + (d.get("output_tokens", 0) + d.get("reasoning_tokens", 0)) * pricing.output
     ) / 1_000_000
@@ -654,7 +792,7 @@ def _rpc_post(
     timeout: float,
 ) -> Optional[Dict[str, Any]]:
     """POST one Connect-protocol RPC to the local language server."""
-    url = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/{method}"
+    url = f"https://{RPC_HOST}:{port}/{RPC_SERVICE}/{method}"
     req = urllib.request.Request(
         url,
         data=json.dumps(dict(payload)).encode("utf-8"),
@@ -756,7 +894,7 @@ def locate_antigravity_rpc() -> List[Tuple[int, str]]:
             resp = _rpc_post(
                 port, cand["token"], "Heartbeat",
                 {"uuid": "00000000-0000-0000-0000-000000000000"},
-                ctx, timeout=1.5,
+                ctx, timeout=RPC_HEARTBEAT_TIMEOUT,
             )
             if resp is not None:
                 verified.append((port, cand["token"]))
@@ -780,10 +918,18 @@ class AntigravityScan:
     fallback_transcripts: int = 0
     estimated_records: int = 0
     records: int = 0
+    # Earliest timestamp seen on disk (window-independent) — drives the
+    # computed retention note in the report header.
+    earliest_record: Optional[datetime] = None
 
     @property
     def sessions_scanned(self) -> int:
         return self.active_sessions + self.fallback_transcripts
+
+    def note_ts(self, ts: Optional[datetime]) -> None:
+        if ts is not None and (self.earliest_record is None
+                               or ts < self.earliest_record):
+            self.earliest_record = ts
 
 
 def _parse_antigravity_rpc(window: Window, scan: AntigravityScan) -> set:
@@ -791,14 +937,15 @@ def _parse_antigravity_rpc(window: Window, scan: AntigravityScan) -> set:
     active_ids: set = set()
     ctx = _insecure_loopback_ctx()
     for port, token in locate_antigravity_rpc():
-        traj = _rpc_post(port, token, "GetAllCascadeTrajectories", {}, ctx, timeout=3)
+        traj = _rpc_post(port, token, "GetAllCascadeTrajectories", {}, ctx,
+                         timeout=RPC_QUERY_TIMEOUT)
         if traj is None:
             continue
         for cascade_id in traj.get("trajectorySummaries", {}):
             active_ids.add(cascade_id)
             meta = _rpc_post(
                 port, token, "GetCascadeTrajectoryGeneratorMetadata",
-                {"cascadeId": cascade_id}, ctx, timeout=3,
+                {"cascadeId": cascade_id}, ctx, timeout=RPC_QUERY_TIMEOUT,
             )
             if meta is None:
                 continue
@@ -815,6 +962,7 @@ def _parse_antigravity_rpc(window: Window, scan: AntigravityScan) -> set:
                             ts_str.replace("Z", "+00:00")).astimezone()
                     except ValueError:
                         ts = None
+                scan.note_ts(ts)
                 if ts is None or not window.contains(ts):
                     continue
                 model_id = chat_model.get("model") or usage.get("model") or "unknown"
@@ -876,7 +1024,7 @@ def _parse_antigravity_fallback(
         accumulated_chars = 0
         last_model_call_accumulated_chars = 0
         # Default fallback (most Antigravity sessions)
-        current_model = "gemini-3-flash-preview"
+        current_model = ANTIGRAVITY_DEFAULT_MODEL
 
         for idx, rec in enumerate(_iter_jsonl(f)):
             content = rec.get("content") or ""
@@ -885,6 +1033,7 @@ def _parse_antigravity_fallback(
                 current_model = switched
 
             ts = parse_ts(rec)
+            scan.note_ts(ts)
             if ts is None or not window.contains(ts):
                 continue
 
@@ -1130,7 +1279,7 @@ def parse_gemini_cli(window: Optional[Window] = None) -> GeminiCliScan:
         scan.files_scanned += 1
 
         # Propagate model selection within session
-        current_model = "gemini-3-flash-preview"
+        current_model = GEMINI_CLI_DEFAULT_MODEL
         for msg in sorted_messages:
             m_id = msg.get("model")
             if m_id and m_id != "unknown":
@@ -1315,9 +1464,9 @@ def get_cache_label(share: float) -> str:
 def _cache_warnings(fresh_input: int, share: float) -> List[str]:
     reasons = []
     if fresh_input > INPUT_WARN_THRESHOLD:
-        reasons.append(f"input_tokens > 250,000 ({fmt(fresh_input)})")
+        reasons.append(f"input_tokens > {INPUT_WARN_THRESHOLD:,} ({fmt(fresh_input)})")
     if share < CACHE_SHARE_GOOD:
-        reasons.append(f"cache_share < 85% ({share * 100:.1f}%)")
+        reasons.append(f"cache_share < {CACHE_SHARE_GOOD:.0%} ({share * 100:.1f}%)")
     return reasons
 
 
@@ -1347,8 +1496,8 @@ def print_cache_health_report(invocations: Sequence[Invocation]) -> None:
         if reasons:
             print(f"    [WARNING] {', '.join(reasons)}")
 
-    # 2. By Session (Top 10)
-    print("\n--- Top 10 Sessions Cache Health ---")
+    # 2. By Session (top TOP_SESSIONS_COUNT)
+    print(f"\n--- Top {TOP_SESSIONS_COUNT} Sessions Cache Health ---")
     session_stats: Dict[str, Dict[str, Any]] = defaultdict(
         lambda: {"input": 0, "total": 0, "cache_read": 0, "source": ""})
     for inv in invocations:
@@ -1358,7 +1507,8 @@ def print_cache_health_report(invocations: Sequence[Invocation]) -> None:
         stats["cache_read"] += inv.cache_read
         stats["source"] = inv.source
 
-    for s, stats in sorted(session_stats.items(), key=lambda x: -x[1]["total"])[:10]:
+    for s, stats in sorted(session_stats.items(),
+                           key=lambda x: -x[1]["total"])[:TOP_SESSIONS_COUNT]:
         total = stats["total"]
         if total == 0:
             continue
@@ -1433,7 +1583,9 @@ def print_model_class_buckets(invocations: Sequence[Invocation]) -> None:
     print()
 
 
-def print_top_hogs(invocations: Sequence[Invocation], top_n: int = 20) -> None:
+def print_top_hogs(invocations: Sequence[Invocation],
+                   top_n: Optional[int] = None) -> None:
+    top_n = TOP_HOGS_COUNT if top_n is None else top_n
     print("======================================================================")
     print(f"Top {top_n} Token Hogs")
     print("======================================================================")
@@ -1448,38 +1600,96 @@ def print_top_hogs(invocations: Sequence[Invocation], top_n: int = 20) -> None:
     print()
 
 
+# Substring -> display label, first match wins. Config overlay:
+# {"company_rules": [["needle", "label"], ...]} is tried before the built-ins,
+# and {"fleet_provider_rules": [...]} likewise for Fleet:<provider> sources.
+_BUILTIN_COMPANY_RULES: Tuple[Tuple[str, str], ...] = (
+    ("Claude Code", "Anthropic (Claude Code)"),
+    ("Gemini CLI", "Google (Gemini CLI)"),
+    ("Antigravity", "Google (Antigravity)"),
+    ("Codex", "OpenAI (Codex)"),
+    ("OpenAI", "OpenAI (Codex)"),
+)
+_BUILTIN_FLEET_RULES: Tuple[Tuple[str, str], ...] = (
+    ("Ollama", "Local (Ollama/Gemma)"),
+    ("OpenRouter", "OpenRouter (free)"),
+    ("HF", "HuggingFace (free)"),
+    ("HuggingFace", "HuggingFace (free)"),
+)
+
+
+def _config_label_rules(key: str) -> Tuple[Tuple[str, str], ...]:
+    rules: List[Tuple[str, str]] = []
+    for entry in CONFIG.get(key) or []:
+        try:
+            needle, label = entry
+            rules.append((str(needle), str(label)))
+        except (TypeError, ValueError):
+            LOG.warning("skipping bad %s entry: %r", key, entry)
+    return tuple(rules)
+
+
+_COMPANY_RULES = _config_label_rules("company_rules") + _BUILTIN_COMPANY_RULES
+_FLEET_RULES = _config_label_rules("fleet_provider_rules") + _BUILTIN_FLEET_RULES
+
+
 def _company_of(source: str) -> str:
     """Provider/company display name for an invocation source tag."""
-    if "Claude Code" in source:
-        return "Anthropic (Claude Code)"
     if source.startswith("Fleet:"):
         prov = source.split(":", 1)[1]
-        if "Ollama" in prov:
-            return "Local (Ollama/Gemma)"
-        if "OpenRouter" in prov:
-            return "OpenRouter (free)"
-        if "HF" in prov or "HuggingFace" in prov:
-            return "HuggingFace (free)"
+        for needle, label in _FLEET_RULES:
+            if needle in prov:
+                return label
         return f"Fleet ({prov})"
-    if "Gemini CLI" in source:
-        return "Google (Gemini CLI)"
-    if "Antigravity" in source:
-        return "Google (Antigravity)"
-    if "Codex" in source or "OpenAI" in source:
-        return "OpenAI (Codex)"
+    for needle, label in _COMPANY_RULES:
+        if needle in source:
+            return label
     return "Unknown"
 
 
 def print_route_recommendations(invocations: Sequence[Invocation]) -> None:
-    """Standing routing doctrine plus a data-driven spike callout: the single
-    (company, day) with the highest fresh-input volume in this window."""
+    """Routing recommendations computed from this window's measured data:
+    lane mix, premium-class cost share, per-company cache health, and the
+    single (company, day) with the highest fresh-input volume."""
     print("======================================================================")
     print("Recommended routing changes:")
     print("======================================================================")
-    print("- Move repeated vault scans to local/cheap agents.")
-    print("- Keep Claude Opus reserved for final synthesis and arbitration.")
-    print("- Compress Antigravity handoffs before replaying long sessions.")
+    recs: List[str] = []
 
+    # Lane mix: is anything running on the local/free lane at all?
+    bucket_tokens: Dict[str, int] = defaultdict(int)
+    bucket_cost: Dict[str, float] = defaultdict(float)
+    for inv in invocations:
+        name = _BUCKET_DISPLAY.get(get_model_bucket(inv.model), "Local/free usage")
+        cost, _src = model_bill(inv.model, inv.billing_bucket())
+        bucket_tokens[name] += inv.total_tokens
+        bucket_cost[name] += cost
+    total_cost = sum(bucket_cost.values())
+
+    if invocations and bucket_tokens.get("Local/free usage", 0) == 0:
+        recs.append("- Route repeated scans/summarization to local/free lanes "
+                    "(0 local/free tokens this window).")
+
+    premium_cost = bucket_cost.get("Premium cloud usage", 0.0)
+    if total_cost > 0 and premium_cost / total_cost >= 0.5:
+        recs.append(f"- Reserve premium models for final synthesis and "
+                    f"arbitration ({premium_cost / total_cost:.0%} of shadow "
+                    f"cost is premium-class).")
+
+    # Per-company cache health: flag companies below the 'Good' share.
+    company_cache: Dict[str, List[int]] = defaultdict(lambda: [0, 0])
+    for inv in invocations:
+        stats = company_cache[_company_of(inv.source)]
+        stats[0] += inv.cache_read
+        stats[1] += inv.total_tokens
+    for company in sorted(company_cache):
+        cr, tot = company_cache[company]
+        if tot and (cr / tot) < CACHE_SHARE_GOOD:
+            recs.append(f"- Compress {company} context before replaying long "
+                        f"sessions (cache share {cr / tot:.0%} < "
+                        f"{CACHE_SHARE_GOOD:.0%}).")
+
+    # The single largest fresh-input day per company.
     spikes: Dict[Tuple[str, str], int] = defaultdict(int)
     for inv in invocations:
         if inv.timestamp is None:
@@ -1489,8 +1699,14 @@ def print_route_recommendations(invocations: Sequence[Invocation]) -> None:
     if spikes:
         (company, day), volume = max(spikes.items(), key=lambda kv: kv[1])
         if volume > INPUT_WARN_THRESHOLD:
-            print(f"- Investigate {day} {company} input spike "
-                  f"({fmt(volume)} fresh input tokens in one day).")
+            recs.append(f"- Investigate {day} {company} input spike "
+                        f"({fmt(volume)} fresh input tokens in one day).")
+
+    if not recs:
+        recs.append("- No routing changes recommended: lane mix and cache "
+                    "health look sound this window.")
+    for rec in recs:
+        print(rec)
     print("======================================================================")
 
 
@@ -1521,6 +1737,8 @@ def print_model_breakdown_and_bill(all_models: Mapping[str, TokenCounts]) -> Non
     grand_total_cost = 0.0
     grand_total_cold = 0.0
     total_cache_reads = 0
+    cache_read_billed = 0.0
+    cache_read_at_input = 0.0
     used_estimate = False
 
     for model in sorted(all_models, key=lambda m: -sum(all_models[m].values())):
@@ -1535,6 +1753,8 @@ def print_model_breakdown_and_bill(all_models: Mapping[str, TokenCounts]) -> Non
         pricing = price_for(model)
         grand_total_cold += ((i + cc + cr) * pricing.input
                              + (o + rt) * pricing.output) / 1_000_000
+        cache_read_billed += cr * pricing.cache_read
+        cache_read_at_input += cr * pricing.input
         if src == EST:
             used_estimate = True
         tag = "~" if src == EST else " "
@@ -1554,8 +1774,12 @@ def print_model_breakdown_and_bill(all_models: Mapping[str, TokenCounts]) -> Non
           f"${grand_total_cold - grand_total_cost:,.2f}")
     if used_estimate:
         print("  ~ = model priced from an estimate, not a first-party doc")
+    # Measured blended discount: what this window's cache-reads billed at,
+    # as a share of what the same tokens would cost at fresh-input rates.
+    billed_ratio = (cache_read_billed / cache_read_at_input
+                    if cache_read_at_input else 0.0)
     print(f"Cache-reads as share of all tokens:         {cache_share:.1f}%  "
-          f"(billed ~10% of input - why naive math inflates)")
+          f"(billed ~{billed_ratio:.0%} of input - why naive math inflates)")
     if sub_cost > 0:
         print(f"Your actual subscription spend:             ${sub_cost:,.2f}")
     print("----------------------------------------------------------------------")
@@ -1564,11 +1788,12 @@ def print_model_breakdown_and_bill(all_models: Mapping[str, TokenCounts]) -> Non
     print("======================================================================\n")
 
 
-_PROVIDER_ORDER = [
+# Display order for the by-provider summary; config key: "provider_order".
+_PROVIDER_ORDER: List[str] = [str(p) for p in CONFIG.get("provider_order") or (
     "Anthropic (Claude Code)", "Google (Antigravity)", "Google (Gemini CLI)",
     "OpenAI (Codex)", "Local (Ollama/Gemma)", "OpenRouter (free)",
     "HuggingFace (free)",
-]
+)]
 
 
 def print_by_provider_summary(invocations: Sequence[Invocation]) -> None:
@@ -1805,8 +2030,8 @@ def print_analytics_dashboard(
 # HuggingFace tokenizers (default: Qwen/Qwen3-1.7B-Base), Parquet/JSONL/text.
 # =============================================================================
 
-DEFAULT_TC_MODEL = "Qwen/Qwen3-1.7B-Base"
-DEFAULT_TC_BATCH_SIZE = 256
+DEFAULT_TC_MODEL = _cfg("tc_tokenizer_model", "Qwen/Qwen3-1.7B-Base")
+DEFAULT_TC_BATCH_SIZE = _cfg("tc_batch_size", 256, int)
 
 
 @dataclass
@@ -2144,7 +2369,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "ranges (most specific wins: --start/--end > --month > --compare > --weeks > --days > positional)\n"
-            "  token_tracker.py                                    last 2 days (default)\n"
+            f"  token_tracker.py                                    last {DEFAULT_DAYS} days (default)\n"
             "  token_tracker.py 7                                  last 7 days (legacy positional)\n"
             "  token_tracker.py --days 7                           last 7 days\n"
             "  token_tracker.py --weeks 2                          last 14 days\n"
@@ -2152,11 +2377,14 @@ def build_parser() -> argparse.ArgumentParser:
             "  token_tracker.py --start 2026-06-11 --end 2026-06-18   explicit inclusive range\n"
             "  token_tracker.py --compare 7                        last 7d vs prior 7d, per company\n"
             "  token_tracker.py 7 --by-provider                   group the Fleet ledger by provider\n"
-            "\nenv: TOKEN_TRACKER_CUTOFF=<iso8601> overrides the lower bound."
+            "\nenv: TOKEN_TRACKER_CUTOFF=<iso8601> overrides the lower bound;\n"
+            "     TOKEN_TRACKER_CONFIG=<path.json> overlays every table & knob\n"
+            "     (see tracker_config.example.json); any knob name uppercased\n"
+            "     works as a direct env override (e.g. CHARS_PER_TOKEN=5)."
         ),
     )
     parser.add_argument("days_pos", nargs="?", type=int, default=None,
-                        help="legacy positional: days back from now (default 2)")
+                        help=f"legacy positional: days back from now (default {DEFAULT_DAYS})")
     parser.add_argument("--days", type=int, default=None, help="days back from now")
     parser.add_argument("--weeks", type=int, default=None,
                         help="weeks back from now (7*N days)")
@@ -2173,6 +2401,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "comparisons + records (highest day/week/month/streak)")
     parser.add_argument("--by-provider", action="store_true",
                         help="group the Fleet usage ledger rows by provider")
+    parser.add_argument("--top", type=int, default=TOP_HOGS_COUNT, metavar="N",
+                        help=f"rows in the Token Hogs table (default {TOP_HOGS_COUNT})")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="log skipped files / RPC probes to stderr")
     parser.add_argument("--version", action="version",
@@ -2279,8 +2509,14 @@ def run_report(args: argparse.Namespace) -> int:
 
     # 2. Google Antigravity
     anti = parse_antigravity(window)
-    print("--- Google Antigravity (Hybrid RPC & Estimation) "
-          "[! partial - Antigravity retention starts ~2026-05-19; pre-May encrypted] ---")
+    # Retention note computed from what is actually on disk, not assumed.
+    if anti.earliest_record is not None:
+        retention = (f"[! partial - earliest Antigravity record on disk: "
+                     f"{anti.earliest_record:%Y-%m-%d}; anything older is "
+                     f"encrypted or purged]")
+    else:
+        retention = "[! no Antigravity records found on disk]"
+    print(f"--- Google Antigravity (Hybrid RPC & Estimation) {retention} ---")
     print(f"Sessions scanned: {anti.sessions_scanned} ({anti.active_sessions} active "
           f"via RPC + {anti.fallback_transcripts} fallback from disk)")
     print(f"Invocations tracked: {anti.records} ({anti.rpc_records} exact via RPC "
@@ -2341,7 +2577,7 @@ def run_report(args: argparse.Namespace) -> int:
         compute_and_print_split(all_invocations, "Blended Report")
         print_cache_health_report(all_invocations)
         print_model_class_buckets(all_invocations)
-        print_top_hogs(all_invocations)
+        print_top_hogs(all_invocations, top_n=args.top)
         print_route_recommendations(all_invocations)
         if args.by_provider:
             print_by_provider_summary(all_invocations)

@@ -1,0 +1,68 @@
+{
+  "_comment": "Copy to tracker_config.json (or point TOKEN_TRACKER_CONFIG at it). Every key is optional; env vars (key name uppercased) override this file; this file overrides built-ins.",
+
+  "claude_projects_dir": "~/.claude/projects",
+  "antigravity_brain_dirs": [
+    "~/.gemini/antigravity/brain",
+    "~/.gemini/antigravity-cli/brain"
+  ],
+  "codex_state_db": "~/.codex/state_5.sqlite",
+  "gemini_cli_tmp_dir": "~/.gemini/tmp",
+  "fleet_usage_ledger": "vault/fleet_usage.jsonl",
+
+  "token_tracker_default_days": 2,
+  "lanes_history_days": 760,
+
+  "chars_per_token": 4,
+  "context_overhead_tokens": 6000,
+
+  "cache_share_excellent": 0.95,
+  "cache_share_good": 0.85,
+  "cache_share_warning": 0.60,
+  "input_warn_threshold": 250000,
+  "cache_write_multiplier": 1.25,
+
+  "top_hogs_count": 20,
+  "top_sessions_count": 10,
+
+  "antigravity_default_model": "gemini-3-flash-preview",
+  "gemini_cli_default_model": "gemini-3-flash-preview",
+
+  "antigravity_rpc_host": "127.0.0.1",
+  "antigravity_rpc_service": "exa.language_server_pb.LanguageServerService",
+  "antigravity_rpc_timeout": 1.5,
+  "antigravity_rpc_query_timeout": 3.0,
+
+  "tc_tokenizer_model": "Qwen/Qwen3-1.7B-Base",
+  "tc_batch_size": 256,
+
+  "model_map": {
+    "MODEL_PLACEHOLDER_M999": "example-new-model"
+  },
+  "model_pricing": {
+    "example-new-model": [1.50, 9.00, 0.15, "doc"]
+  },
+  "default_pricing": [1.00, 4.00, 0.10, "est"],
+  "free_models": [
+    "my-local-model:latest"
+  ],
+  "settings_model_rules": [
+    [["example model (fast)"], "example-new-model"]
+  ],
+
+  "company_rules": [
+    ["My Custom CLI", "MyCompany (Custom CLI)"]
+  ],
+  "fleet_provider_rules": [
+    ["LMStudio", "Local (LM Studio)"]
+  ],
+  "provider_order": [
+    "Anthropic (Claude Code)",
+    "Google (Antigravity)",
+    "Google (Gemini CLI)",
+    "OpenAI (Codex)",
+    "Local (Ollama/Gemma)",
+    "OpenRouter (free)",
+    "HuggingFace (free)"
+  ]
+}
