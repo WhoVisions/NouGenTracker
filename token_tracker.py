@@ -16,7 +16,7 @@ import urllib.request
 import ssl
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import datetime as _dtm
 
 DAYS = 2
@@ -943,7 +943,10 @@ def parse_gemini_cli():
     files = sorted(set(files))
 
     cutoff_date = CUTOFF.date() - timedelta(days=1)
-    limit_date = LIMIT_UPPER.date() + timedelta(days=1)
+    limit_date = (
+        date.max if LIMIT_UPPER.date() >= date.max - timedelta(days=1)
+        else LIMIT_UPPER.date() + timedelta(days=1)
+    )
     local_tz = datetime.now().astimezone().tzinfo
 
     for f in files:
