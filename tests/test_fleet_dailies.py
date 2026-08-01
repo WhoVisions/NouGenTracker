@@ -384,9 +384,19 @@ def test_a_clean_tree_stamps_a_plain_counter():
 
 
 def test_an_uncommitted_tracker_edit_is_marked_dirty(tmp_path, monkeypatch):
-    """The regression: whoart published 15 dailies stamped 71aef8ff08fa, and no
-    commit in the repo reproduces that value. The export ran against uncommitted
-    edits, so the counting version it names cannot be looked up."""
+    """The regression, with the attribution corrected 2026-08-01.
+
+    It was phoebus's 17 dailies that carry an unreproducible stamp
+    (22555db5d239), not whoart's 15. Measured after the fact: 71aef8ff08fa is
+    reproduced by five commits — main, 01f5d76, dce1f97, d3a422b and this
+    branch's own token_tracker.py — under BOTH implementations of the
+    fingerprint, while no commit in the repository produces 22555db5d239.
+
+    The diagnosis was right and this test is worth keeping; only the box was
+    wrong. It was reached by taking one machine's value as the reference and
+    concluding the other was fabricated, which is the same shape of error as
+    reading your own push as another machine's work.
+    """
     tracker = fd.TRACKER_SOURCE
     original = tracker.read_text(encoding="utf-8")
     try:
