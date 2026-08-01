@@ -296,3 +296,26 @@ def test_anomaly_reports_real_tokens_not_the_log():
     found = fd.detect_anomalies(days)
     assert found[0]["tokens"] == 5, "must report the count, not log10 of it"
     assert found[0]["ratio"] < 0.001
+
+
+tt = _load("token_tracker", "token_tracker.py")
+
+
+# --- pricing table --------------------------------------------------------
+
+def test_five_family_models_are_priced():
+    """These fell through to the $1/$4 unknown-model default before this change."""
+    for model in ("claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"):
+        assert model in tt.MODEL_PRICING, f"{model} missing from the pricing table"
+
+
+def test_opus_5_is_not_billed_at_the_fallback_rate():
+    assert tt.price_for("claude-opus-5")[:3] == (5.00, 25.00, 0.500)
+    assert tt.price_for("claude-opus-5")[:3] != tt.DEFAULT_PRICING[:3]
+
+
+def test_cache_read_is_a_tenth_of_input_across_claude_models():
+    """The documented ratio; a typo in the table would show up as a silent mis-bill."""
+    for model in ("claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"):
+        inp, _out, cache, _src = tt.MODEL_PRICING[model]
+        assert abs(cache - inp / 10) < 1e-9, f"{model}: cache {cache} != {inp}/10"
