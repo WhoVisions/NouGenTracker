@@ -1,0 +1,71 @@
+{
+  "counter": "71aef8ff08fa+dirty",
+  "date": "2026-06-05",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 89808,
+    "input_tokens": 15754,
+    "output_tokens": 2786,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-01T00:06:57-04:00",
+  "generated_by": "unknown-agent",
+  "invocations": 13,
+  "machine": "blade1tb",
+  "models": {
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 20145,
+      "input_tokens": 7229,
+      "output_tokens": 408,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash-low (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 69663,
+      "input_tokens": 8525,
+      "output_tokens": 2378,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "14b2a41fb8fe064c",
+    "2a26560d15eb176a",
+    "2fb9a3356babdf6d",
+    "31a5d7f2d758c594",
+    "39611259f9035736",
+    "4ad25baf475d1767",
+    "9e686651af87dcda",
+    "be1d34b64a694e97",
+    "c07a796db18fb923",
+    "cd67c875ba7b1580",
+    "ce0c770c926ae1e6",
+    "d236b35d60080ee4",
+    "f93fbb95cebaecae"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 89808,
+      "input_tokens": 15754,
+      "output_tokens": 2786,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 89808,
+    "input_tokens": 15754,
+    "output_tokens": 2786,
+    "reasoning": 0
+  }
+}
