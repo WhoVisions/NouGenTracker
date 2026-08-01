@@ -218,7 +218,27 @@ def _ast_digest(source: str) -> Optional[str]:
     found: Dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
-            found[node.name] = ast.dump(_without_docstrings(node), annotate_fields=False)
+            # ast.unparse, NOT ast.dump. dump() serialises the node's fields,
+            # and CPython adds fields between releases — 3.12 gave FunctionDef a
+            # type_params, and that alone changes the digest for source that has
+            # not moved. The result: one fingerprint per Python version.
+            #
+            # That is not a hypothetical. This fleet spent a day on it. whoart
+            # and blade1tb run 3.11 and stamped 71aef8ff08fa; phoebus runs 3.13
+            # and stamped 22555db5d239 — from the same committed
+            # token_tracker.py, both trees clean. Each box could reproduce only
+            # its own value, so each concluded the other's was fabricated, and
+            # both wrote it up that way. Two machines running byte-identical
+            # counting code refused to sum, which is precisely the failure this
+            # fingerprint exists to prevent.
+            #
+            # unparse() renders the tree back to source, so it depends on the
+            # grammar rather than on the field layout of a particular release.
+            # Verified identical on 3.11 and 3.13. It keeps the property that
+            # made the AST approach right in the first place: reformatting,
+            # renaming a local, or rewriting a comment leaves the digest alone,
+            # while changing a dedup key or a filter moves it.
+            found[node.name] = ast.unparse(_without_docstrings(node))
     parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
     return hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6).hexdigest()
 
