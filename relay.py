@@ -55,7 +55,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 __version__ = "1.0.0"
 
@@ -667,6 +667,106 @@ def peer_freshness(peers: Sequence[PeerRollup]) -> List[Tuple[str, Optional[date
 
 
 # ---------------------------------------------------------------------------
+# Fleet summary — tokens, cost, and the doubts attached to both
+# ---------------------------------------------------------------------------
+
+#: The GM's standing spend signal. Not a budget to stay under: the doctrine here
+#: is Jevons — efficiency buys capability, not savings — so this reports
+#: cost-per-day crossing a line, it never advises using less.
+def alert_usd() -> float:
+    return float(_cfg("nougen_usage_alert_usd", 0.0, float) or 0.0)
+
+
+def row_bill(row: Mapping[str, Any]) -> float:
+    """API-equivalent USD for one rollup row, using the tracker's own pricing."""
+    bucket = {
+        "input_tokens": int(row.get("input_tokens", 0)),
+        "output_tokens": int(row.get("output_tokens", 0)),
+        "cache_creation_input_tokens": int(row.get("cache_creation", 0)),
+        "cache_read_input_tokens": int(row.get("cache_read", 0)),
+        "reasoning_tokens": int(row.get("reasoning", 0)),
+    }
+    return tt.model_bill(row.get("model"), bucket)[0]
+
+
+@dataclass
+class FleetSummary:
+    machines: Dict[str, Dict[str, Any]]
+    days: List[str]
+    total_cost: float
+    total_tokens: int
+    cache_read: int
+    confidence: Optional[float]
+    inferred: List[str]
+    overlaps: List[Overlap]
+    freshness: List[Tuple[str, Optional[datetime], float, bool]]
+    local: str
+
+    @property
+    def cache_share(self) -> float:
+        return self.cache_read / self.total_tokens if self.total_tokens else 0.0
+
+    @property
+    def busiest_day(self) -> Optional[Tuple[str, float]]:
+        per_day: Dict[str, float] = defaultdict(float)
+        for data in self.machines.values():
+            for day, cost in data["days"].items():
+                per_day[day] += cost
+        if not per_day:
+            return None
+        return max(per_day.items(), key=lambda kv: kv[1])
+
+
+def fleet_summary(days: Optional[int] = None) -> FleetSummary:
+    """Everything the fleet has published, folded into one view.
+
+    Includes THIS machine: a fleet report that omits the box running it is the
+    same mistake as a machine that cannot see its peers.
+    """
+    rollups = read_peers(include_local=True)
+    if days:
+        cutoff = (_utc_now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        rollups = [r for r in rollups if r.day >= cutoff]
+    machines: Dict[str, Dict[str, Any]] = {}
+    all_rows: List[Dict[str, Any]] = []
+    days_seen: set = set()
+    total_cost = total_tokens = cache_read = 0
+
+    for rollup in rollups:
+        entry = machines.setdefault(rollup.machine, {
+            "cost": 0.0, "tokens": 0, "calls": 0, "cache_read": 0,
+            "days": defaultdict(float), "models": defaultdict(float),
+        })
+        days_seen.add(rollup.day)
+        for row in rollup.rows:
+            all_rows.append(row)
+            cost = row_bill(row)
+            tokens = sum(int(row.get(field, 0)) for field in ROLLUP_FIELDS)
+            entry["cost"] += cost
+            entry["tokens"] += tokens
+            entry["calls"] += int(row.get("invocations", 0))
+            entry["cache_read"] += int(row.get("cache_read", 0))
+            entry["days"][rollup.day] += cost
+            entry["models"][str(row.get("model") or "unknown")] += cost
+            total_cost += cost
+            total_tokens += tokens
+            cache_read += int(row.get("cache_read", 0))
+
+    return FleetSummary(
+        machines=machines,
+        days=sorted(days_seen),
+        total_cost=total_cost,
+        total_tokens=total_tokens,
+        cache_read=cache_read,
+        confidence=confidence(all_rows),
+        inferred=estimated_sources(all_rows),
+        overlaps=detect_overlaps(rollups),
+        freshness=peer_freshness([r for r in rollups if r.machine != machine_id()]),
+        local=machine_id(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Transport — best effort, never fatal
 # ---------------------------------------------------------------------------
 
@@ -960,6 +1060,24 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Render the fleet as a page. A table tells; a page shows."""
+    import dashboard as dash
+
+    summary = fleet_summary(args.days)
+    target = Path(os.path.expanduser(args.out)) if args.out else (
+        relay_dir() / "dashboard.html")
+    dash.write(summary, target, threshold=alert_usd(), title=args.title)
+    print(target)
+    if args.open:
+        try:
+            import webbrowser
+            webbrowser.open(target.as_uri())
+        except Exception as exc:  # pragma: no cover - platform dependent
+            LOG.warning("relay: could not open a browser: %s", exc)
+    return 0
+
+
 def cmd_hooks(args: argparse.Namespace) -> int:
     if args.install:
         target = Path(os.path.expanduser(args.settings))
@@ -1010,6 +1128,16 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--days", type=int, default=None)
     exp.add_argument("--no-push", action="store_true")
     exp.set_defaults(func=cmd_export)
+
+    board = subs.add_parser("dashboard",
+                            help="render the fleet as a self-contained HTML page")
+    board.add_argument("--out", default="", help="output path")
+    board.add_argument("--days", type=int, default=None,
+                       help="limit to the last N days of rollups")
+    board.add_argument("--title", default="Fleet usage")
+    board.add_argument("--open", action="store_true",
+                       help="open the page in a browser when it is written")
+    board.set_defaults(func=cmd_dashboard)
 
     hooks = subs.add_parser("hooks", help="print or install the Claude Code hooks")
     hooks.add_argument("--install", action="store_true")
