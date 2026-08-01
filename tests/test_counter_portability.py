@@ -75,7 +75,13 @@ def test_another_interpreter_agrees_on_the_same_source(interpreter, tmp_path):
         "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
         f"print(m.counter_fingerprint(pathlib.Path(r'{target}')))\n"
     )
-    proc = subprocess.run([interpreter, "-c", script], capture_output=True, text=True)
+    try:
+        proc = subprocess.run([interpreter, "-c", script], capture_output=True, text=True)
+    except OSError as exc:
+        # Windows resolves python3.11 to a Store app-execution alias: a stub
+        # shutil.which finds and CreateProcess then refuses. Found on whoart,
+        # where this test failed rather than skipping.
+        pytest.skip(f"{interpreter} is on PATH but cannot be executed: {exc}")
     if proc.returncode != 0:
         pytest.skip(f"{interpreter} could not import the module: {proc.stderr.strip()[:120]}")
 

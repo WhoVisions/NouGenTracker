@@ -18,8 +18,8 @@ being estimated after the fact. It does not retro-fix the 8.1B already logged by
 the IDE — nothing can — it stops the estimated bucket from growing.
 
 Deliberately NOT in COUNTING_SURFACE: this writes ledger rows, it does not
-change how any row is counted, so the counter stays 3e1ec4bcf451 and the fleet's
-pending re-export is not invalidated.
+change how any row is counted, so adding the lane leaves the counting version
+where it was and does not stale anyone's published machine-days.
 
 CLI:
     python fleet/agy_usage.py "how many tokens did that cost?"
