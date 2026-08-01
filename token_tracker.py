@@ -401,7 +401,17 @@ def cols(d):
 
 # --- Parse Claude Code Logs ---
 def parse_claude():
-    files = glob.glob(os.path.join(PROJECTS, "**", "*.jsonl"), recursive=True)
+    # Sorted, because this parser dedupes by requestId across every file and the
+    # FIRST copy of a duplicated id is the one that gets counted — and therefore
+    # the one whose timestamp decides which day it lands on. glob returns
+    # filesystem order, which differs between machines and can change on the
+    # same machine when files are added. Unsorted, two boxes scanning identical
+    # logs could attribute the same request to different days and disagree on a
+    # fleet total with nothing to point at. Nothing duplicates today (824
+    # usage-bearing ids here, none in two files, none spanning two dates), so
+    # this changes no current number; it removes the way a future one could go
+    # wrong silently. parse_gemini_cli already sorts.
+    files = sorted(glob.glob(os.path.join(PROJECTS, "**", "*.jsonl"), recursive=True))
     by_day = defaultdict(lambda: defaultdict(int))
     by_model = defaultdict(lambda: defaultdict(int))
     totals = defaultdict(int)
@@ -682,8 +692,11 @@ def parse_antigravity():
     files = []
     for brain_dir in ANTIGRAVITY_BRAIN_DIRS:
         if os.path.exists(brain_dir):
+            # Same reason as parse_claude: this parser dedupes too, so scan
+            # order decides attribution. os.walk yields directory order.
             for root, dirs, filenames in os.walk(brain_dir):
-                for filename in filenames:
+                dirs.sort()
+                for filename in sorted(filenames):
                     if filename == "transcript.jsonl":
                         files.append(os.path.join(root, filename))
 

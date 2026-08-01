@@ -379,8 +379,23 @@ def test_token_totals_are_unchanged_when_no_prices_are_supplied(tmp_path):
 
 # --- dirty-tree counters --------------------------------------------------
 
-def test_a_clean_tree_stamps_a_plain_counter():
+def test_a_clean_tree_stamps_a_plain_counter(monkeypatch):
+    """Asserted against the function's own branch rather than the ambient repo.
+
+    The first version of this read the real working tree, so it passed in CI
+    (fresh checkout) and failed on every developer machine mid-edit — including
+    the edit that introduced it. A test that only holds when nobody is working
+    is not testing the code.
+    """
+    monkeypatch.setattr(fd, "_tracker_differs_from_head", lambda path: False)
     assert not fd.counter_fingerprint().endswith(fd.DIRTY_SUFFIX)
+
+
+def test_the_real_tree_agrees_with_its_own_git_state():
+    """The end-to-end version, skipped rather than failed while editing."""
+    dirty = fd._tracker_differs_from_head(fd.TRACKER_SOURCE)
+    counter = fd.counter_fingerprint()
+    assert counter.endswith(fd.DIRTY_SUFFIX) == dirty
 
 
 def test_an_uncommitted_tracker_edit_is_marked_dirty(tmp_path, monkeypatch):
