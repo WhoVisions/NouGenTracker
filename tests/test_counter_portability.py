@@ -34,29 +34,33 @@ OTHER_PYTHONS = [p for p in ("python3.10", "python3.11", "python3.12", "python3.
                  if shutil.which(p) and not sys.executable.endswith(p)]
 
 
-def test_the_digest_is_built_from_unparse_not_dump():
-    """ast.dump serialises node FIELDS, and CPython adds fields between
-    releases (3.12 gave FunctionDef a type_params), so the same source
-    fingerprints differently per version. unparse renders source back out, so
-    it tracks the grammar instead.
+def test_the_digest_uses_neither_dump_nor_unparse():
+    """Both stdlib serialisers are interpreter-sensitive, in different ways.
 
-    Checked against _ast_digest, which is where the digest is actually built —
-    counter_fingerprint delegates to it so the working tree and the committed
-    blob go through one code path.
+    ast.dump writes whatever fields the running interpreter defines, so a field
+    added in a point release moves the digest for unchanged source. ast.unparse
+    dodges that but its formatting is not frozen either — 3.10 renders
+    differently from 3.11, which CI caught after 3.11 and 3.13 had agreed
+    locally and looked like proof. The traversal has to be ours.
     """
     source = (ROOT / "fleet_dailies.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "_ast_digest":
-            calls = [n for n in ast.walk(node)
-                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
-            attrs = {c.func.attr for c in calls}
-            assert "unparse" in attrs, "the digest must be built from ast.unparse"
-            assert "dump" not in attrs, (
-                "ast.dump is version-sensitive and must not feed the digest"
-            )
+            attrs = {n.func.attr for n in ast.walk(node)
+                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+            assert "dump" not in attrs, "ast.dump moves when CPython adds a field"
+            assert "unparse" not in attrs, "ast.unparse formatting differs across versions"
+            names = {n.func.id for n in ast.walk(node)
+                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+            assert "_canonical" in names, "the digest must use the explicit traversal"
             return
     raise AssertionError("_ast_digest not found")
+
+
+def test_volatile_fields_are_excluded_by_name():
+    """type_params is the one that actually bit; keep the list honest."""
+    assert "type_params" in fd._VOLATILE_AST_FIELDS
 
 
 @pytest.mark.skipif(not OTHER_PYTHONS, reason="only one interpreter available")

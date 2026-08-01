@@ -101,19 +101,23 @@ UNSTAMPED = "unstamped"
 
 #: Suffix for a counter computed from a working tree that does not match HEAD.
 #: A fingerprint's whole job is to name a counting version someone can later
-#: look up. Proven on 2026-08-01: whoart published 15 dailies stamped
-#: 71aef8ff08fa, and no commit in the repo reproduces that value — every
-#: committed token_tracker.py, including the one on the branch they published
-#: from, fingerprints to 22555db5d239. The export had run against uncommitted
-#: edits. Nothing was wrong with the hash; it faithfully described code that
-#: was never persisted, so the version it names cannot be retrieved.
+#: look up, and a value computed from code that was never committed cannot be
+#: looked up — it is worse than an absent one, because it still reads as
+#: authoritative.
 #:
-#: Marking it is strictly better than either alternative. Silently stamping a
-#: dirty tree produces an unreproducible id that still looks authoritative;
-#: refusing to export blocks the ordinary case of testing a parser change
-#: before committing it. A marked counter stays comparable to itself — two
-#: dirty exports from the same tree still match — while never being mistaken
-#: for a version anyone can check out.
+#: Marking beats both alternatives. Silently stamping a dirty tree produces an
+#: unreproducible id that looks authoritative; refusing to export blocks the
+#: ordinary case of testing a parser change before committing it. A marked
+#: counter stays comparable to itself — two exports from the same dirty tree
+#: still match — while never being mistaken for a version anyone can check out.
+#:
+#: HISTORICAL NOTE, because the comment here used to assert the opposite: this
+#: marker was introduced on the theory that whoart's 71aef8ff08fa came from an
+#: uncommitted tree, since no commit reproduced it on phoebus. That was wrong.
+#: The two boxes ran different Pythons and the digest was interpreter-sensitive
+#: (see _canonical). whoart's tree was clean; so was phoebus's. The mechanism is
+#: still right and still earns its place — but the case it catches is rare, not
+#: the routine explanation for a counter mismatch. Suspect the interpreter first.
 DIRTY_SUFFIX = "+dirty"
 
 # The token fields every record carries. Kept explicit rather than derived so a
@@ -205,6 +209,43 @@ def _without_docstrings(node: ast.AST) -> ast.AST:
     return node
 
 
+#: AST fields CPython has added to existing node types. They carry no counting
+#: semantics, and including them makes the digest a function of the interpreter
+#: rather than of the code — 3.12 added type_params to FunctionDef, which was
+#: enough to give every Python version its own fingerprint for identical source.
+#: Extend this when a release adds another; the cross-interpreter test in
+#: tests/test_counter_portability.py fails loudly when one appears.
+_VOLATILE_AST_FIELDS = frozenset({"type_params", "type_comment"})
+
+
+def _canonical(node: ast.AST) -> str:
+    """A serialisation of an AST that means the same thing on every CPython.
+
+    Neither stdlib option survives contact with a mixed-version fleet.
+    ast.dump() writes out whatever fields the running interpreter defines, so a
+    new field in a point release moves the digest for source that has not
+    changed. ast.unparse() renders back to source and dodges that, but its
+    formatting is not frozen either — 3.10 emits different text than 3.11 for
+    the same tree, which CI caught after 3.11 and 3.13 had agreed locally and
+    looked like proof.
+
+    So the traversal is ours: node type name, then each field in _fields order
+    minus the volatile ones. That stays insensitive to formatting, comments and
+    docstrings — the property that made hashing the AST right to begin with —
+    while depending only on grammar this code names explicitly.
+    """
+    if isinstance(node, ast.AST):
+        parts = [type(node).__name__]
+        for field in node._fields:
+            if field in _VOLATILE_AST_FIELDS:
+                continue
+            parts.append(f"{field}={_canonical(getattr(node, field, None))}")
+        return "(" + ",".join(parts) + ")"
+    if isinstance(node, list):
+        return "[" + ",".join(_canonical(item) for item in node) + "]"
+    return repr(node)
+
+
 def _ast_digest(source: str) -> Optional[str]:
     """Hash the counting surface out of a tracker source. None if unparseable.
 
@@ -218,27 +259,7 @@ def _ast_digest(source: str) -> Optional[str]:
     found: Dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
-            # ast.unparse, NOT ast.dump. dump() serialises the node's fields,
-            # and CPython adds fields between releases — 3.12 gave FunctionDef a
-            # type_params, and that alone changes the digest for source that has
-            # not moved. The result: one fingerprint per Python version.
-            #
-            # That is not a hypothetical. This fleet spent a day on it. whoart
-            # and blade1tb run 3.11 and stamped 71aef8ff08fa; phoebus runs 3.13
-            # and stamped 22555db5d239 — from the same committed
-            # token_tracker.py, both trees clean. Each box could reproduce only
-            # its own value, so each concluded the other's was fabricated, and
-            # both wrote it up that way. Two machines running byte-identical
-            # counting code refused to sum, which is precisely the failure this
-            # fingerprint exists to prevent.
-            #
-            # unparse() renders the tree back to source, so it depends on the
-            # grammar rather than on the field layout of a particular release.
-            # Verified identical on 3.11 and 3.13. It keeps the property that
-            # made the AST approach right in the first place: reformatting,
-            # renaming a local, or rewriting a comment leaves the digest alone,
-            # while changing a dedup key or a filter moves it.
-            found[node.name] = ast.unparse(_without_docstrings(node))
+            found[node.name] = _canonical(_without_docstrings(node))
     parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
     return hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6).hexdigest()
 
