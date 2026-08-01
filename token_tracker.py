@@ -410,7 +410,21 @@ def parse_claude():
                 ts = parse_ts(rec)
                 if ts is None or ts < CUTOFF or ts > LIMIT_UPPER:
                     continue
-                uid = rec.get("uuid")
+                # One API request writes SEVERAL transcript rows — the assistant
+                # message, then one per tool_use block — and every row repeats
+                # the same usage object under a fresh uuid. Deduping by uuid
+                # therefore dedupes nothing, and the report bills a request once
+                # per block it happened to produce.
+                #
+                # Measured on this box 2026-08-01 over 6 transcripts: 652 of
+                # 1,136 requests spanned multiple rows, usage byte-identical in
+                # every single one, none differing. Summing rows gave 554M
+                # cache-read tokens where summing requests gives 287M — the
+                # headline number was inflated 1.9x, and so was the shadow bill.
+                #
+                # requestId is the unit the provider bills, so it is the unit of
+                # dedup. uuid remains the fallback for the rare row without one.
+                uid = rec.get("requestId") or rec.get("request_id") or rec.get("uuid")
                 if uid is not None:
                     if uid in seen:
                         continue
@@ -448,10 +462,19 @@ def parse_claude():
 # --- RPC Locator ---
 def locate_antigravity_rpc():
     candidates = []
-    # 1. WMIC process detection
+    # 1. WMIC process detection.
+    #
+    # wmic.exe was removed in Windows 11 24H2. The call still "worked" here in
+    # the sense that the exception was caught — but with shell=True and stderr
+    # inherited, cmd.exe printed "'wmic' is not recognized" straight into the
+    # middle of the report on every run. stderr is captured now, and the
+    # PowerShell path below is the one that actually finds anything on a
+    # current box.
     try:
         cmd = 'wmic process get ProcessId,CommandLine /FORMAT:CSV'
-        output = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
+        output = subprocess.check_output(
+            cmd, shell=True, stderr=subprocess.DEVNULL
+        ).decode('utf-8', errors='ignore')
         for line in output.splitlines():
             line = line.strip()
             if not line or "wmic" in line:
@@ -475,7 +498,9 @@ def locate_antigravity_rpc():
     if not candidates:
         try:
             cmd = 'powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*language_server*\' } | Select-Object ProcessId, CommandLine | ConvertTo-Json"'
-            output = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
+            output = subprocess.check_output(
+                cmd, shell=True, stderr=subprocess.DEVNULL
+            ).decode('utf-8', errors='ignore')
             if output.strip():
                 data = json.loads(output)
                 if isinstance(data, dict):
@@ -1390,14 +1415,124 @@ def print_top_hogs(invocations):
     print()
 
 
+def route_recommendations(invocations):
+    """Findings derived from the window's own invocations.
+
+    This used to print four fixed strings — including "investigate the
+    2026-06-16 Antigravity spike", a date hardcoded into every report forever.
+    Advice that does not read its input is decoration: it survives the problem
+    being fixed and it fires when there is nothing wrong. Every line below
+    carries the number that produced it, so it can be checked and it goes away
+    on its own once the condition does.
+
+    Returns a list of strings; empty means nothing crossed a threshold, which
+    is a real answer and is printed as one.
+    """
+    if not invocations:
+        return []
+
+    out = []
+
+    # --- spend concentration -------------------------------------------------
+    # Worth saying only when one model dominates: that is the lever.
+    cost_by_model = defaultdict(float)
+    for inv in invocations:
+        bucket = {
+            "input_tokens": inv.get("input_tokens", 0),
+            "output_tokens": inv.get("output_tokens", 0),
+            "cache_creation_input_tokens": inv.get("cache_creation", 0),
+            "cache_read_input_tokens": inv.get("cache_read", 0),
+            "reasoning_tokens": inv.get("reasoning", 0),
+        }
+        cost, _ = model_bill(inv.get("model", ""), bucket)
+        cost_by_model[inv.get("model") or "unknown"] += cost
+    total_cost = sum(cost_by_model.values())
+    # Two guards, both learned from the first draft flagging a $0.53 window:
+    # with only one model in play "100% of spend" is arithmetic, not a finding —
+    # there is no alternative lane to name. And below a dollar, no routing
+    # change is worth the reader's attention.
+    if total_cost >= 1.00 and len(cost_by_model) > 1:
+        model, cost = max(cost_by_model.items(), key=lambda kv: kv[1])
+        share = cost / total_cost
+        if share >= 0.60:
+            out.append(f"{model} is {share:.0%} of the window's API-equivalent cost "
+                       f"(${cost:,.2f} of ${total_cost:,.2f}) — the only routing "
+                       f"change that moves the number is moving work off it.")
+
+    # --- cache health, per lane ---------------------------------------------
+    # Cache-reads bill at ~10% of input, so a lane paying full input rate on
+    # context it already sent is the most expensive habit available.
+    per_source = defaultdict(lambda: defaultdict(int))
+    for inv in invocations:
+        s = per_source[inv.get("source", "unknown")]
+        s["input"] += inv.get("input_tokens", 0)
+        s["cache_read"] += inv.get("cache_read", 0)
+        s["cache_creation"] += inv.get("cache_creation", 0)
+        s["calls"] += 1
+        if not inv.get("exact", True):
+            s["estimated_calls"] += 1
+
+    for source, s in sorted(per_source.items()):
+        context = s["input"] + s["cache_read"] + s["cache_creation"]
+        if context < 100_000:
+            continue  # too little traffic for the ratio to mean anything
+        hit = s["cache_read"] / context
+        if hit < 0.50:
+            out.append(f"{source}: only {hit:.0%} of context tokens were cache "
+                       f"reads ({fmt(s['cache_read'])} of {fmt(context)}) — that "
+                       f"lane is re-sending context at full input price.")
+        if s["cache_read"] and s["cache_creation"] > s["cache_read"]:
+            out.append(f"{source}: wrote more cache than it read "
+                       f"({fmt(s['cache_creation'])} created vs "
+                       f"{fmt(s['cache_read'])} read) — caches are expiring "
+                       f"before they pay for themselves.")
+
+    # --- confidence ----------------------------------------------------------
+    for source, s in sorted(per_source.items()):
+        if s["calls"] and s["estimated_calls"] / s["calls"] > 0.50:
+            out.append(f"{source}: {s['estimated_calls']} of {s['calls']} calls "
+                       f"are ESTIMATED, not counted — treat its share of this "
+                       f"report as an order of magnitude, not a figure.")
+
+    # --- day spikes ----------------------------------------------------------
+    # The replacement for the hardcoded date: same idea, computed.
+    by_day_source = defaultdict(int)
+    for inv in invocations:
+        ts = inv.get("timestamp")
+        if not ts:
+            continue
+        key = (inv.get("source", "unknown"), ts.strftime("%Y-%m-%d"))
+        by_day_source[key] += (inv.get("input_tokens", 0)
+                               + inv.get("cache_creation", 0))
+    per_lane = defaultdict(list)
+    for (source, day), total in by_day_source.items():
+        per_lane[source].append((day, total))
+    for source, days in sorted(per_lane.items()):
+        if len(days) < 3:
+            continue  # a median of two points flags noise as a spike
+        totals = sorted(t for _, t in days)
+        median = totals[len(totals) // 2]
+        if median <= 0:
+            continue
+        for day, total in sorted(days):
+            if total >= 3 * median and total > 50_000:
+                out.append(f"{source} {day}: {fmt(total)} fresh context tokens "
+                           f"(input + cache writes, the part cache reads do not "
+                           f"cover), {total / median:.1f}x the lane's median day "
+                           f"— worth knowing what ran.")
+    return out
+
+
 def print_route_recommendations(invocations):
+    findings = route_recommendations(invocations)
     print("======================================================================")
-    print("Recommended routing changes:")
+    print("Findings from this window:")
     print("======================================================================")
-    print("- Move repeated vault scans to local/cheap agents.")
-    print("- Keep Claude Opus reserved for final synthesis and arbitration.")
-    print("- Compress Antigravity handoffs before replaying long sessions.")
-    print("- Investigate 2026-06-16 Antigravity input spike.")
+    if not findings:
+        print("- Nothing crossed a threshold. No concentrated spend, no cold-context")
+        print("  lane, no day out of line with its own median.")
+    for line in findings:
+        print(f"- {line}")
     print("======================================================================")
 
 

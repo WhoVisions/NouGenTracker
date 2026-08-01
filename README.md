@@ -66,6 +66,18 @@ showing up in the report. Config via `FLEET_PROXY_PORT`, `FLEET_OLLAMA_UPSTREAM`
 - **Trust the tool's own counter.** Where a provider records exact tokens (Claude usage
   blocks, Codex `tokens_used`, the Gemini CLI `tokens` block), the tracker uses them and
   only estimates when there is genuinely nothing on disk.
+- **A request is the unit, not a log row.** Claude Code writes one row per content block
+  — the assistant message, then one per `tool_use` — and every row repeats the *same*
+  usage object under a fresh `uuid`. Deduping by uuid dedupes nothing. Measured on one
+  box 2026-08-01: 652 of 1,136 requests spanned multiple rows, usage identical in every
+  one, inflating cache-reads from 287M to 554M. Dedup is by `requestId` (the unit the
+  provider bills), with `uuid` as the fallback. The bug scaled with how many tools a
+  session called, so the busier the work, the more wrong the report.
+- **Findings are computed or absent.** The report's closing section reads the window's
+  own invocations — spend concentration, cache hit rate per lane, caches written but
+  never reused, estimated-vs-exact confidence, and days above 3x their lane's own median.
+  Each line carries the number it came from. When nothing crosses a threshold it says so,
+  because advice that fires unconditionally teaches people to skip the section.
 - **Cache discipline is the whole economy.** Cache-reads dominate token *counts* but bill
   at ~10% of input; pricing them correctly is the difference between an honest gauge and a
   scary-but-meaningless number.
