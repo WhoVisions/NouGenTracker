@@ -1,0 +1,164 @@
+{
+  "counter": "71aef8ff08fa",
+  "date": "2026-05-31",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 2360129283,
+    "input_tokens": 1753159,
+    "output_tokens": 948347,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-01T00:11:02-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 4040,
+  "machine": "blade1tb",
+  "models": {
+    "claude-opus-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 297187881,
+      "input_tokens": 238328,
+      "output_tokens": 116947,
+      "reasoning": 0
+    },
+    "claude-sonnet-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 3672489,
+      "input_tokens": 1932,
+      "output_tokens": 2333,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 2320638,
+      "input_tokens": 178420,
+      "output_tokens": 51339,
+      "reasoning": 0
+    },
+    "gemini-3.1-pro-high (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 2459044,
+      "input_tokens": 4338,
+      "output_tokens": 1395,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash-high (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 1675917652,
+      "input_tokens": 1055813,
+      "output_tokens": 582011,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash-low (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 169178897,
+      "input_tokens": 83090,
+      "output_tokens": 26272,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash-medium (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 62339359,
+      "input_tokens": 116926,
+      "output_tokens": 54305,
+      "reasoning": 0
+    },
+    "gpt-oss-120b-medium (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 147053323,
+      "input_tokens": 74312,
+      "output_tokens": 113745,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "00305a62d1cba879",
+    "0034899a86ed546b",
+    "0067e5f69087481e",
+    "006b9238f5facdb1",
+    "007d1f9b514029e5",
+    "007ee5ca88acf6a8",
+    "008c92b98ff5e525",
+    "00a49de6f6493dca",
+    "00be7dee999ad6e4",
+    "00c32ebea1340572",
+    "00ca799568defdd8",
+    "00e80937a17bb7e7",
+    "00f640b0aff8493f",
+    "00f85fc22e48c667",
+    "0104f6549e2e0256",
+    "0109d4e47b11a16d",
+    "011ab92bda696ec6",
+    "011fe528444b329a",
+    "012796ffb62042ac",
+    "012a299d8af6d5de",
+    "01549f1b19a06230",
+    "0157c337c14d1bb4",
+    "015c3dd0eaeed4c9",
+    "01893b81c151442c",
+    "01bfe8091c43a5b6",
+    "01c14f28ebf471c0",
+    "0207de580efe9270",
+    "023a2243afe5f56f",
+    "024b60f18690d713",
+    "029793f218e8a341",
+    "02ad87dcfbd1eb0e",
+    "02b4b86ab147dafa",
+    "02bf812b06d80802",
+    "02bfd17213766a9d",
+    "02d4a0a5c4d06cb5",
+    "02d5427d00e2206c",
+    "0329513fdd8caaab",
+    "0364d5b3a798bb96",
+    "0371905ca8a7fc19",
+    "03790aaf8155623a",
+    "0392ebb0cbeb5bed",
+    "03af74fc7bde488e",
+    "03b23d68a9102469",
+    "03b4c751eda9351a",
+    "03c4a30b8323b9fe",
+    "03c5241c1f10f51f",
+    "03c74be1db11dab7",
+    "03d075ba8f37847e",
+    "03d2f52ed6266ef2",
+    "03d8330f1ecae428",
+    "03d8fa30e0381d69",
+    "03f67ac06d359f82",
+    "041412fafec7efaf",
+    "04291d28dd3c9e8a",
+    "043855af76b6a4ac",
+    "044fef1ebf823dae",
+    "0460cf1bfbec2573",
+    "046ed4186c9746ae",
+    "0472b477e77c81b1",
+    "049372c31f4eac14",
+    "049aed126d5a6d7e",
+    "049e859ba6c29156",
+    "04b48359716e2a39",
+    "04bb9601dcf491ae"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 2360129283,
+      "input_tokens": 1753159,
+      "output_tokens": 948347,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 2360129283,
+    "input_tokens": 1753159,
+    "output_tokens": 948347,
+    "reasoning": 0
+  }
+}
