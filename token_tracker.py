@@ -256,6 +256,16 @@ EST = "est"
 MODEL_PRICING = {
     # ---- Claude: first-party list prices ----
     "claude-fable-5":             (10.00, 50.00, 1.000, DOC),
+    # Opus 5 and Sonnet 5 were missing entirely, so 255M opus-5 tokens — the
+    # second-largest model on this fleet — were billing at the $1/$4 unknown-model
+    # default. Cache read is 0.1x base input on every Claude model.
+    "claude-opus-5":              (5.00, 25.00, 0.500, DOC),
+    "claude-opus-5-thinking":     (5.00, 25.00, 0.500, DOC),
+    # Sonnet 5 list price. Introductory pricing of $2.00 / $10.00 runs through
+    # 2026-08-31, so bills dated on or before that are overstated by ~33% here.
+    # Left at list because the ledger has no per-day price history to switch on.
+    "claude-sonnet-5":            (3.00, 15.00, 0.300, DOC),
+    "claude-sonnet-5-thinking":   (3.00, 15.00, 0.300, DOC),
     "claude-opus-4-8":            (5.00, 25.00, 0.500, DOC),
     "claude-opus-4-7":            (5.00, 25.00, 0.500, DOC),
     "claude-opus-4-6":            (5.00, 25.00, 0.500, DOC),
