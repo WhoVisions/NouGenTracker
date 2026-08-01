@@ -396,6 +396,12 @@ class Pricing(NamedTuple):
 MODEL_PRICING: Dict[str, Pricing] = {
     # ---- Claude: first-party list prices ----
     "claude-fable-5":             Pricing(10.00, 50.00, 1.000, DOC),
+    "claude-mythos-5":            Pricing(10.00, 50.00, 1.000, DOC),
+    "claude-opus-5":              Pricing(5.00, 25.00, 0.500, DOC),
+    "claude-opus-5-thinking":     Pricing(5.00, 25.00, 0.500, DOC),
+    # Sonnet 5 intro pricing through 2026-08-31; becomes 3.00/15.00/0.30 on Sept 1.
+    "claude-sonnet-5":            Pricing(2.00, 10.00, 0.200, DOC),
+    "claude-sonnet-5-thinking":   Pricing(2.00, 10.00, 0.200, DOC),
     "claude-opus-4-8":            Pricing(5.00, 25.00, 0.500, DOC),
     "claude-opus-4-7":            Pricing(5.00, 25.00, 0.500, DOC),
     "claude-opus-4-6":            Pricing(5.00, 25.00, 0.500, DOC),
@@ -408,6 +414,7 @@ MODEL_PRICING: Dict[str, Pricing] = {
     "claude-sonnet-4-5-20250929": Pricing(3.00, 15.00, 0.300, DOC),
     "claude-sonnet-4-5-thinking": Pricing(3.00, 15.00, 0.300, DOC),
     "claude-haiku-4-5":           Pricing(1.00, 5.00, 0.100, DOC),
+    "claude-haiku-4-5-20251001":  Pricing(1.00, 5.00, 0.100, DOC),
     # ---- Gemini: first-party list prices (ai.google.dev/gemini-api/docs/pricing) ----
     # Flash thinking tiers (high/medium/low) share one standard price.
     "gemini-3.5-flash-high":      Pricing(1.50, 9.00, 0.15, DOC),
@@ -616,6 +623,10 @@ class Invocation:
     exact: bool = True
     session_id: str = "unknown"
     source_file: str = ""
+    #: Which box produced this call. Empty means "this machine"; relay peers
+    #: stamp their own id. Added last, with a default, so every existing
+    #: collector keeps constructing Invocation unchanged.
+    machine: str = ""
 
     @property
     def total_tokens(self) -> int:
@@ -821,6 +832,7 @@ def _find_language_server_candidates() -> List[Dict[str, Any]]:
         output = subprocess.check_output(
             "wmic process get ProcessId,CommandLine /FORMAT:CSV",
             shell=True,
+            stderr=subprocess.DEVNULL,
         ).decode("utf-8", errors="ignore")
         for line in output.splitlines():
             line = line.strip()
@@ -845,10 +857,13 @@ def _find_language_server_candidates() -> List[Dict[str, Any]]:
     if not candidates:
         try:
             output = subprocess.check_output(
-                'powershell -Command "Get-CimInstance Win32_Process | '
+                'powershell -Command "$ErrorActionPreference = '
+                "'SilentlyContinue'; "
+                "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | "
                 "Where-Object { $_.CommandLine -like '*language_server*' } | "
                 'Select-Object ProcessId, CommandLine | ConvertTo-Json"',
                 shell=True,
+                stderr=subprocess.DEVNULL,
             ).decode("utf-8", errors="ignore")
             if output.strip():
                 data = json.loads(output)
@@ -868,8 +883,9 @@ def _find_language_server_candidates() -> List[Dict[str, Any]]:
 def _listening_ports_for_pid(pid: int) -> List[int]:
     ports: List[int] = []
     try:
-        output = subprocess.check_output("netstat -ano", shell=True).decode(
-            "utf-8", errors="ignore")
+        output = subprocess.check_output(
+            "netstat -ano", shell=True, stderr=subprocess.DEVNULL,
+        ).decode("utf-8", errors="ignore")
     except (OSError, subprocess.SubprocessError) as exc:
         LOG.debug("netstat failed: %s", exc)
         return ports
@@ -1403,6 +1419,78 @@ def parse_fleet_usage(window: Optional[Window] = None) -> FleetScan:
 
 
 # ---------------------------------------------------------------------------
+# Source: Relay peers (other machines on this fleet)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RelayScan:
+    usage: UsageAggregate
+    records: int = 0
+    machines: Tuple[str, ...] = ()
+    freshness: Tuple[Tuple[str, Optional[datetime], float, bool], ...] = ()
+    available: bool = False
+
+
+def parse_relay(window: Optional[Window] = None) -> RelayScan:
+    """Fold OTHER machines' relay rollups into this report.
+
+    Rollups are aggregate-only (day, source, model, five token buckets), so one
+    synthetic Invocation stands in for each row. Its timestamp is local NOON of
+    the rollup's day: any timezone on earth still buckets that into the right
+    calendar day, which filename-based bucketing would not survive.
+
+    The local machine is excluded here and asserted absent below — reading our
+    own export back as a peer would silently double every number in the report,
+    which is the one failure mode worse than having no relay at all.
+    """
+    window = window or default_window()
+    scan = RelayScan(usage=UsageAggregate())
+    try:
+        import relay  # local module; optional by design
+    except ImportError:
+        return scan
+    scan.available = True
+
+    local = relay.machine_id()
+    peers = relay.read_peers()
+    seen: List[str] = []
+    tz = datetime.now().astimezone().tzinfo
+    for peer in peers:
+        if peer.machine == local:  # belt and braces — read_peers filters too
+            LOG.warning("relay: refusing to blend local rollup %s", peer.path)
+            continue
+        try:
+            noon = datetime.strptime(peer.day, "%Y-%m-%d").replace(
+                hour=12, tzinfo=tz)
+        except ValueError:
+            LOG.warning("relay: skipping rollup with bad day %r", peer.day)
+            continue
+        if not window.contains(noon):
+            continue
+        if peer.machine not in seen:
+            seen.append(peer.machine)
+        for row in peer.rows:
+            scan.usage.add(Invocation(
+                timestamp=noon,
+                source=str(row.get("source") or "relay"),
+                model=str(row.get("model") or "unknown"),
+                input_tokens=int(row.get("input_tokens") or 0),
+                output_tokens=int(row.get("output_tokens") or 0),
+                cache_creation=int(row.get("cache_creation") or 0),
+                cache_read=int(row.get("cache_read") or 0),
+                reasoning=int(row.get("reasoning") or 0),
+                exact=bool(row.get("exact", True)),
+                session_id=f"{peer.machine}:{peer.day}",
+                source_file=peer.path.name,
+                machine=peer.machine,
+            ))
+            scan.records += 1
+    scan.machines = tuple(sorted(seen))
+    scan.freshness = tuple(relay.peer_freshness(peers))
+    return scan
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 
@@ -1421,6 +1509,50 @@ def print_day_table(by_day: Mapping[str, TokenCounts], totals: TokenCounts) -> N
     print("-" * len(DAY_TABLE_HEADER))
     ti, to, _tcc, tcr, trt = cols(totals)
     print(f"{'TOTAL':<12}{fmt(ti):>14}{fmt(to):>14}{fmt(tcr):>16}{fmt(trt):>14}")
+
+
+def print_peer_freshness(scan: "RelayScan") -> None:
+    """Which machines reported, and how long ago.
+
+    Printed even when everything is fresh. A peer that stopped exporting must
+    show up as an age, never as a quietly smaller total.
+    """
+    print(f"{'machine':<20}{'last rollup (UTC)':<22}{'age':>9}  state")
+    print("-" * 60)
+    if not scan.freshness:
+        print("(no peers have exported to this relay yet)")
+        print("-" * 60)
+        return
+    for machine, ts, age, stale in scan.freshness:
+        when = f"{ts:%Y-%m-%d %H:%M}" if ts else "never"
+        age_s = "-" if age == float("inf") else f"{age:.1f}h"
+        print(f"{machine:<20}{when:<22}{age_s:>9}  {'STALE' if stale else 'ok'}")
+    print("-" * 60)
+
+
+def print_by_machine(invocations: Sequence[Invocation], local: str) -> None:
+    """Split the blended report by the box that produced each call."""
+    buckets: Dict[str, TokenCounts] = defaultdict(lambda: defaultdict(int))
+    counts: Dict[str, int] = defaultdict(int)
+    for inv in invocations:
+        name = inv.machine or local
+        counts[name] += 1
+        for key, value in inv.billing_bucket().items():
+            buckets[name][key] += value
+    print()
+    print(SEP_70)
+    print("Usage by machine")
+    print(SEP_70)
+    header = (f"{'machine':<20}{'calls':>9}{'input':>13}{'output':>13}"
+              f"{'cache-read':>15}")
+    print(header)
+    print("-" * len(header))
+    for name in sorted(buckets, key=lambda m: -sum(buckets[m].values())):
+        i, o, _cc, cr, _rt = cols(buckets[name])
+        tag = f"{name} (this box)" if name == local else name
+        print(f"{tag:<20}{fmt(counts[name]):>9}{fmt(i):>13}{fmt(o):>13}"
+              f"{fmt(cr):>15}")
+    print("-" * len(header))
 
 
 def compute_and_print_split(invocations: Sequence[Invocation], title: str) -> None:
@@ -2401,6 +2533,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "comparisons + records (highest day/week/month/streak)")
     parser.add_argument("--by-provider", action="store_true",
                         help="group the Fleet usage ledger rows by provider")
+    parser.add_argument("--by-machine", action="store_true",
+                        help="split the blended report by machine "
+                             "(automatic whenever relay peers are present)")
+    parser.add_argument("--no-peers", action="store_true",
+                        help="ignore relay rollups from other machines; "
+                             "report this box alone")
     parser.add_argument("--top", type=int, default=TOP_HOGS_COUNT, metavar="N",
                         help=f"rows in the Token Hogs table (default {TOP_HOGS_COUNT})")
     parser.add_argument("--verbose", "-v", action="store_true",
@@ -2565,8 +2703,23 @@ def run_report(args: argparse.Namespace) -> int:
     print_day_table(fleet.usage.by_day, fleet.usage.totals)
     print()
 
+    # 3e. Relay peers — other machines on this fleet
+    relay_scan = RelayScan(usage=UsageAggregate())
+    if not args.no_peers:
+        relay_scan = parse_relay(window)
+        if relay_scan.available:
+            machines = ", ".join(relay_scan.machines) or "none in window"
+            print(f"--- Relay Peers (other machines: {machines}) ---")
+            print(f"Rollup rows blended: {relay_scan.records}\n")
+            print_peer_freshness(relay_scan)
+            print()
+            if relay_scan.records:
+                print_day_table(relay_scan.usage.by_day, relay_scan.usage.totals)
+                print()
+
     # 4. Cross-source aggregates
-    scans = (claude.usage, anti.usage, codex.usage, gemini.usage, fleet.usage)
+    scans = (claude.usage, anti.usage, codex.usage, gemini.usage, fleet.usage,
+             relay_scan.usage)
     all_models = merge_by_model(scans)
     all_invocations: List[Invocation] = []
     for agg in scans:
@@ -2581,6 +2734,14 @@ def run_report(args: argparse.Namespace) -> int:
         print_route_recommendations(all_invocations)
         if args.by_provider:
             print_by_provider_summary(all_invocations)
+        if args.by_machine or relay_scan.records:
+            local = "this box"
+            try:
+                import relay as _relay
+                local = _relay.machine_id() or local
+            except ImportError:
+                pass
+            print_by_machine(all_invocations, local)
 
     print()
 

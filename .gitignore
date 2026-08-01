@@ -12,3 +12,11 @@ ann_matrix.npy
 ann_labels.json
 .DS_Store
 audit_log.jsonl
+
+# This repo is PUBLIC. Spend, usage and machine data never belong in it.
+receipts/
+reports/
+week_report.txt
+tracker_config.json
+.relay/
+relay_cache/

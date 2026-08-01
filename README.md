@@ -62,6 +62,55 @@ Point your OpenAI-compatible / Ollama clients at the proxy and the local lanes s
 showing up in the report. Config via `FLEET_PROXY_PORT`, `FLEET_OLLAMA_UPSTREAM`,
 `FLEET_USAGE_LEDGER`.
 
+## Multiple machines: the relay (`relay.py`)
+
+One box only ever knew its own spend. The relay passes a **baton** between machines so a
+single report can tell the truth about a day. A leg has three phases, and each is a command:
+
+```bash
+python relay.py start    # take the baton: pull peers, open a leg
+python relay.py mid      # checkpoint: re-export and stamp progress
+python relay.py end      # hand off: final export, commit, push
+python relay.py status   # who is on the relay, and how fresh each one is
+```
+
+Then any report blends them in automatically:
+
+```bash
+python token_tracker.py --days 1 --by-machine   # split by box
+python token_tracker.py --days 1 --no-peers     # this box alone
+```
+
+**Bake it in** — wire the phases to your Claude Code session lifecycle
+(SessionStart → `start`, Stop → `mid`, SessionEnd → `end`):
+
+```bash
+python relay.py hooks             # print the config
+python relay.py hooks --install   # merge it in, with a backup
+```
+
+Design rules this follows:
+
+- **Aggregate only.** What crosses the wire is `day, source, model` plus the five token
+  buckets. No session ids, no transcript paths, no usernames — privacy by construction,
+  not by a redaction pass.
+- **One file per machine per day**, so concurrent machines never write the same path and
+  therefore never conflict. No shared index to corrupt.
+- **Never double count.** A machine refuses to read its own rollup back as a peer, and the
+  check is on the `machine` field rather than the folder name.
+- **A quiet peer shows as an age, never as a smaller total.** The freshness table prints
+  every run; anything past `RELAY_STALE_HOURS` (default 48) is marked `STALE`.
+- **Transport failure is never fatal.** Rollups are written locally first; the git push is
+  best effort. Being the first machine on the relay is a normal state, not an error.
+- `mid` is throttled (`RELAY_MID_MIN_MINUTES`, default 30) because the Stop hook fires
+  every turn and a full export rescans every transcript.
+
+Knobs: `RELAY_DIR`, `RELAY_REMOTE`, `RELAY_BRANCH`, `RELAY_MACHINE`, `RELAY_STALE_HOURS`,
+`RELAY_WINDOW_DAYS`, `RELAY_MID_MIN_MINUTES` — env beats `tracker_config.json` beats
+default, same engine as every other knob here. Identity resolves
+`RELAY_MACHINE` → `NOUGEN_MACHINE` → config → hostname probe, and prints which route won.
+**Point `RELAY_REMOTE` at a private repo.** Spend data does not belong in a public one.
+
 ## Design notes
 - **Trust the tool's own counter.** Where a provider records exact tokens (Claude usage
   blocks, Codex `tokens_used`, the Gemini CLI `tokens` block), the tracker uses them and
