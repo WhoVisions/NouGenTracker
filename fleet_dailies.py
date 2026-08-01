@@ -205,31 +205,87 @@ def _without_docstrings(node: ast.AST) -> ast.AST:
     return node
 
 
-def _tracker_differs_from_head(path: Path) -> bool:
-    """Whether the tracker source on disk differs from the committed one.
+def _ast_digest(source: str) -> Optional[str]:
+    """Hash the counting surface out of a tracker source. None if unparseable.
 
-    Answers "can someone else reproduce this fingerprint?" — which is the only
-    question a counting version is asked. Compared by content rather than via
-    `git status`, so an untracked or unstaged edit counts the same as a staged
-    one: what matters is whether the bytes that produced these numbers exist in
-    the repository, not how git currently classifies them.
+    The pure half of the fingerprint: no git, no filesystem, so it can be run
+    over the working copy and over a committed blob and the two compared.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    found: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
+            found[node.name] = ast.dump(_without_docstrings(node), annotate_fields=False)
+    parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
+    return hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6).hexdigest()
+
+
+def _committed_source(path: Path, ref: str = "HEAD") -> Optional[str]:
+    """The tracker as committed at `ref`, or None if that cannot be established."""
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+    except (ValueError, OSError):
+        return None
+    code, committed = _git("show", f"{ref}:{rel.as_posix()}")
+    return committed if code == 0 and committed else None
+
+
+def _tracker_differs_from_head(path: Path) -> bool:
+    """Whether the COUNTING code on disk differs from the committed counting code.
+
+    Answers "can someone else reproduce this fingerprint?" — the only question a
+    counting version is asked. Two checks, in order, and both are needed.
+
+    First, ask git whether the BYTES match. `hash-object` applies the same
+    filters git used writing the blob, so line endings and .gitattributes settle
+    themselves, and nothing is decoded — which matters because the decoded-text
+    comparison this replaces was wrong on every Windows box and silent about it:
+    `read_text(errors="replace")` turned every em dash into U+FFFD while
+    `git show` returned it correctly, so the two could never be equal and a
+    clean tree stamped `+dirty` forever. `errors="replace"` cannot raise, so the
+    only symptom was a suffix nobody questioned.
+
+    Identical bytes settle it. DIFFERENT bytes do not, and that is the second
+    check. The fingerprint is deliberately AST-scoped to COUNTING_SURFACE so
+    comments and formatting cannot churn it — so an edit to a print statement or
+    a new CLI flag leaves the counting code byte-identical to HEAD and the
+    fingerprint perfectly reproducible. Reporting that as dirty is a false
+    positive that fires during ordinary work, quarantines exports that were
+    fine, and trains people to ignore the marker: exactly the reasoning that
+    made the fingerprint AST-based in the first place. So on a byte mismatch,
+    compare what is actually hashed.
 
     Unknowable is not dirty. Outside a work tree, without git, or on a file git
-    does not track, this returns False and the caller stamps a plain
-    fingerprint — the same answer a clean checkout gives, which is the right
-    default for the many places this runs with no repository at all.
+    does not track, this returns False — the same answer a clean checkout
+    gives, which is the right default for the many places this runs with no
+    repository at all.
     """
     try:
         rel = path.resolve().relative_to(REPO_ROOT)
     except (ValueError, OSError):
         return False
-    code, committed = _git("show", f"HEAD:{rel.as_posix()}")
+
+    code, head_blob = _git("rev-parse", f"HEAD:{rel.as_posix()}")
     if code != 0:
         return False
+    code, disk_blob = _git("hash-object", "--", str(path))
+    if code == 0 and head_blob.strip() == disk_blob.strip():
+        return False
+
+    committed = _committed_source(path)
+    if committed is None:
+        return False
     try:
-        return path.read_text(encoding="utf-8", errors="replace") != committed + "\n"
+        current = _ast_digest(path.read_text(encoding="utf-8", errors="replace"))
     except OSError:
         return False
+    committed_digest = _ast_digest(committed)
+    if current is None or committed_digest is None:
+        return False
+    return current != committed_digest
 
 
 def counter_fingerprint(source: Optional[Path] = None) -> str:
@@ -251,21 +307,14 @@ def counter_fingerprint(source: Optional[Path] = None) -> str:
     and reporting it as a real version would be a lie in the safe-looking
     direction.
     """
-    path = source or TRACKER_SOURCE
+    path = Path(source or TRACKER_SOURCE)
     try:
-        tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError, ValueError):
+        digest = _ast_digest(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
         return UNSTAMPED
-    dirty = _tracker_differs_from_head(path)
-
-    found: Dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
-            found[node.name] = ast.dump(_without_docstrings(node), annotate_fields=False)
-
-    parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
-    digest = hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6)
-    return digest.hexdigest() + (DIRTY_SUFFIX if dirty else "")
+    if digest is None:
+        return UNSTAMPED
+    return digest + (DIRTY_SUFFIX if _tracker_differs_from_head(path) else "")
 
 
 def counter_of(record: Dict[str, Any]) -> str:
@@ -462,9 +511,23 @@ def load_fleet(dailies_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     return records
 
 
+def committed_counter(ref: str = "HEAD") -> str:
+    """The fingerprint of the tracker AS COMMITTED — one a reader can retrieve.
+
+    The point of a counting version is that someone holding a number can go and
+    read the code that produced it. That makes "reproducible from a commit" a
+    property worth knowing about a cohort, not a detail.
+    """
+    source = _committed_source(TRACKER_SOURCE, ref)
+    if source is None:
+        return UNSTAMPED
+    return _ast_digest(source) or UNSTAMPED
+
+
 def counter_cohorts(
     winners: List[Tuple[Tuple[str, str], Dict[str, Any]]],
     local: Optional[str] = None,
+    reproducible: Optional[set] = None,
 ) -> Dict[str, Any]:
     """Group published machine-days by the counting version that produced them.
 
@@ -497,10 +560,34 @@ def counter_cohorts(
     # request once per content block. A corpus of nothing but unstamped files is
     # the most wrong a fleet total can be, and the one that would slip through a
     # plain majority rule.
+    # Neither can a counter nobody can look up. `+dirty` says outright that the
+    # code it names was never committed; a plain digest that no commit in this
+    # repo reproduces says the same thing without admitting it. Both fail the
+    # only question a counting version exists to answer — "go read the code that
+    # produced this number" — so neither may be declared current, however many
+    # files carry it.
+    #
+    # This is not hypothetical. On 2026-08-01 seventeen files stamped
+    # 22555db5d239 outvoted fifteen stamped 71aef8ff08fa, and 71aef8ff08fa was
+    # the one five commits reproduce. Ranking by headcount handed "current" to
+    # the cohort that could not be verified and marked the verifiable one stale.
+    if reproducible is None:
+        reproducible = {committed_counter()}
+    reproducible = {c for c in reproducible if c and c != UNSTAMPED}
+
+    def _eligible(counter: str) -> bool:
+        return counter != UNSTAMPED and not counter.endswith(DIRTY_SUFFIX)
+
+    def _rank(item):
+        counter, entries = item
+        # Reproducibility outranks headcount. A majority of unverifiable files
+        # is still unverifiable.
+        return (counter in reproducible, len(entries), newest.get(counter, ""))
+
     ranked = sorted(
         ((counter, entries) for counter, entries in cohorts.items()
-         if counter != UNSTAMPED),
-        key=lambda kv: (len(kv[1]), newest.get(kv[0], "")),
+         if _eligible(counter)),
+        key=_rank,
         reverse=True,
     )
     current = ranked[0][0] if ranked else local
@@ -518,6 +605,12 @@ def counter_cohorts(
         "mixed": len(cohorts) > 1 or (len(cohorts) == 1 and UNSTAMPED in cohorts),
         "cohorts": {counter: sorted(entries) for counter, entries in cohorts.items()},
         "stale": stale,
+        # Which cohorts a reader can actually go and verify. Named so the report
+        # can say WHY a cohort is stale — "nobody re-exported yet" and "this
+        # names code that was never committed" need different answers.
+        "reproducible": sorted(c for c in cohorts if c in reproducible),
+        "unverifiable": sorted(c for c in cohorts
+                               if c != UNSTAMPED and c not in reproducible),
         # A box whose own counting differs from the corpus is not wrong yet — it
         # becomes a second cohort the moment it publishes.
         "local_is_current": (not ranked) or local == current,
@@ -756,11 +849,26 @@ def _git(*args: str, cwd: Optional[Path] = None) -> Tuple[int, str]:
             ("git",) + args,
             cwd=str(cwd or REPO_ROOT),
             capture_output=True,
+            # `text=True` alone decodes with the console default — cp1252 on
+            # Windows — and this now runs `git show HEAD:token_tracker.py`,
+            # a UTF-8 file full of em dashes and ⚠. The decode raises inside
+            # subprocess's reader THREAD, so `run` returns normally with
+            # stdout=None and the caller dies on `None + str`. That took
+            # `--fleet` and `--export` down entirely on every Windows box,
+            # which is where the counting-version check needed to run most.
+            # Same fault and same fix as NouGenRelay's _git.
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except OSError as exc:
         return 1, str(exc)
-    return proc.returncode, (proc.stdout + proc.stderr).strip()
+    # And `subprocess.run` only guarantees str for these when it did the
+    # capturing itself. A caller that redirects a stream — and every test that
+    # fakes this call — gets None instead, so the coalesce is needed on top of
+    # the encoding fix, not instead of it. Both machines found this hour, from
+    # opposite ends: 21 faked-call test failures, and a live crash on Windows.
+    return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 
 def install_hooks(repo_root: Optional[Path] = None) -> Tuple[bool, str]:

@@ -19,6 +19,31 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import datetime as _dtm
 
+
+def _force_utf8_stdio():
+    """Windows consoles default to cp1252, which cannot encode this report's glyphs.
+
+    The warning markers are the whole point of the lines they sit on — MIXED
+    COUNTING and OVERLAP are the loudest things this tool prints — and on a
+    cp1252 console `print("⚠ ...")` does not degrade, it raises
+    UnicodeEncodeError and kills the run at exactly the moment it had something
+    serious to say. Reconfigure rather than strip: errors="replace" keeps a
+    legacy console readable.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_force_utf8_stdio()
+
 DAYS = 2
 MONTH = None
 BY_PROVIDER = False
@@ -2483,10 +2508,28 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
                       f"{fmt(_t['output_tokens']):>12}{fmt(_t['cache_read']):>14}"
                       f"{'$' + format(_spend['by_machine'].get(_name, 0.0), ',.2f'):>12}")
             _tot = _agg["totals"]
+            _cnt = _agg["counters"]
             print("  " + "-" * 74)
-            print(f"  {'FLEET':<26}{fmt(_tot['input_tokens']):>12}"
-                  f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}"
-                  f"{'$' + format(_spend['total'], ',.2f'):>12}")
+            if _cnt["mixed"]:
+                # aggregate() has known these cohorts were incomparable since
+                # dce1f97; only the printing was lost. Adding them is arithmetic
+                # on different definitions of a token, and the result looks
+                # exactly like a correct total — which is the entire failure the
+                # counting version exists to prevent.
+                for _c, _ct in sorted(_agg["by_counter"].items(),
+                                      key=lambda kv: kv[0] != _cnt["current"]):
+                    _tag = ("current" if _c == _cnt["current"]
+                            else "UNVERIFIABLE" if _c in _cnt["unverifiable"]
+                            else "STALE")
+                    _label = _c if _c == _fd.UNSTAMPED else _c[:12]
+                    print(f"  {'counter ' + _label + ' (' + _tag + ')':<26}"
+                          f"{fmt(_ct['input_tokens']):>12}"
+                          f"{fmt(_ct['output_tokens']):>12}{fmt(_ct['cache_read']):>14}")
+                print(f"  {'FLEET':<26}{'— not summed: see below':>38}")
+            else:
+                print(f"  {'FLEET':<26}{fmt(_tot['input_tokens']):>12}"
+                      f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}"
+                      f"{'$' + format(_spend['total'], ',.2f'):>12}")
 
             if _spend["by_model"]:
                 print()
@@ -2503,6 +2546,32 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
             if _agg["partial"]:
                 print(f"  {len(_agg['partial'])} partial day(s) included "
                       "(today is not over on those machines)")
+
+            if _cnt["mixed"]:
+                print()
+                print("  ⚠ MIXED COUNTING — these machine-days were produced by "
+                      "code that counts differently:")
+                _stale_by_machine = defaultdict(list)
+                for _m, _d, _c in _cnt["stale"]:
+                    _stale_by_machine[(_m, _c)].append(_d)
+                for (_m, _c), _days in sorted(_stale_by_machine.items()):
+                    print(f"      {_m:<16}{len(_days):>4} day(s)  "
+                          f"{min(_days)}..{max(_days)}  counter {_c[:12]}")
+                # Two different diagnoses, two different instructions. Telling a
+                # box to "re-export" when its stamp names code that was never
+                # committed would have it publish the same unverifiable value.
+                if _cnt["unverifiable"]:
+                    print("      UNVERIFIABLE: no commit in this repo reproduces "
+                          f"{', '.join(c[:12] for c in _cnt['unverifiable'])}.")
+                    print("      That export ran against uncommitted edits. Commit or")
+                    print("      discard them FIRST, then re-export — otherwise the new")
+                    print("      files carry a counting version nobody can look up either.")
+                else:
+                    print("      Each box re-exports its own:  python token_tracker.py "
+                          "--start <first> --end <last> --export")
+                if not _cnt["local_is_current"]:
+                    print(f"      NOTE: this tree counts as {_cnt['local'][:12]}; the "
+                          f"corpus is on {_cnt['current'][:12]}. Pull before publishing.")
 
             if _agg["overlaps"]:
                 print()
