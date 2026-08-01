@@ -247,3 +247,139 @@ def test_hook_config_covers_all_three_phases(monkeypatch, tmp_path):
     config = relay.hook_config()
     phases = {relay.HOOK_EVENTS[event] for event in config}
     assert phases == set(relay.PHASES)
+
+
+# --- overlap sketches -------------------------------------------------------
+
+def _invocation(tt, n, model="claude-opus-5", out=10):
+    """One synthetic call, distinct per n (minutes, so n can exceed 23)."""
+    from datetime import datetime, timedelta, timezone
+    stamp = datetime(2026, 7, 31, tzinfo=timezone.utc) + timedelta(minutes=n)
+    return tt.Invocation(timestamp=stamp, source="Claude Code", model=model,
+                         output_tokens=out)
+
+
+def test_jaccard_is_one_for_identical_sketches(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    tt = _load("token_tracker", "token_tracker.py")
+    prints = [relay.call_fingerprint(_invocation(tt, h)) for h in range(20)]
+    sketch = relay.minhash(prints)
+    assert relay.jaccard(sketch, sketch) == 1.0
+
+
+def test_jaccard_is_zero_for_disjoint_sketches(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    tt = _load("token_tracker", "token_tracker.py")
+    a = relay.minhash(relay.call_fingerprint(_invocation(tt, h)) for h in range(10))
+    b = relay.minhash(relay.call_fingerprint(_invocation(tt, h, out=999))
+                      for h in range(10))
+    assert relay.jaccard(a, b) == 0.0
+
+
+def test_fingerprint_ignores_session_id(monkeypatch, tmp_path):
+    """The same call seen from two boxes must fingerprint identically, or the
+    sketch suppresses the duplication it exists to find."""
+    relay = _fresh(monkeypatch, tmp_path)
+    tt = _load("token_tracker", "token_tracker.py")
+    from datetime import datetime, timezone
+    base = dict(timestamp=datetime(2026, 7, 31, 9, tzinfo=timezone.utc),
+                source="Claude Code", model="claude-opus-5", output_tokens=5)
+    one = tt.Invocation(session_id="a", **base)
+    two = tt.Invocation(session_id="b", source_file="other.jsonl", **base)
+    assert relay.call_fingerprint(one) == relay.call_fingerprint(two)
+
+
+def test_detect_overlaps_flags_shared_calls_across_timezone_day_shift(
+        monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    tt = _load("token_tracker", "token_tracker.py")
+    prints = [relay.call_fingerprint(_invocation(tt, h)) for h in range(30)]
+    sketch = relay._encode_sketch(relay.minhash(prints))
+    for machine, day in (("blade1tb", "2026-07-31"), ("phoebus", "2026-08-01")):
+        path = _write_rollup(tmp_path, machine, day, [dict(ROW, day=day)])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["sketch"] = sketch
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    overlaps = relay.detect_overlaps(relay.read_peers(include_local=True))
+    assert len(overlaps) == 1
+    assert overlaps[0].similarity == 1.0
+    assert {overlaps[0].machine_a, overlaps[0].machine_b} == {"blade1tb", "phoebus"}
+
+
+def test_sketch_from_unknown_version_is_ignored_not_trusted(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    path = _write_rollup(tmp_path, "phoebus", "2026-07-31", [ROW])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["sketch"] = {"version": 99, "hash": "sha1", "k": 64,
+                         "values": ["00" * 8]}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert relay.read_peers()[0].sketch == []
+
+
+def test_sketch_records_its_own_parameters(monkeypatch, tmp_path):
+    """A reader must never have to assume the k a writer used."""
+    relay = _fresh(monkeypatch, tmp_path)
+    encoded = relay._encode_sketch([1, 2, 3])
+    assert encoded["k"] == relay.sketch_k()
+    assert encoded["hash"] == relay.SKETCH_HASH
+    assert encoded["version"] == relay.SKETCH_VERSION
+    values, k = relay._decode_sketch(encoded)
+    assert (values, k) == ([1, 2, 3], relay.sketch_k())
+
+
+# --- confidence -------------------------------------------------------------
+
+def test_confidence_is_none_when_there_is_nothing_to_judge(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    assert relay.confidence([]) is None
+    assert relay.format_confidence(None) == "unknown (nothing to judge)"
+
+
+def test_confidence_is_token_weighted_and_excludes_cache_read(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    rows = [
+        dict(ROW, exact=True, output_tokens=100, cache_read=10 ** 9,
+             input_tokens=0, cache_creation=0, reasoning=0),
+        dict(ROW, exact=False, output_tokens=100, cache_read=0,
+             input_tokens=0, cache_creation=0, reasoning=0),
+    ]
+    # A billion cache-read tokens on the exact row must not drag the ratio to
+    # ~100%: cache_read is excluded, so this is an even split.
+    assert relay.confidence(rows) == 0.5
+
+
+def test_confidence_never_rounds_doubt_away(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    assert relay.format_confidence(0.9997) == ">99.9% measured"
+    assert relay.format_confidence(1.0) == "100% measured"
+
+
+def test_estimated_sources_names_the_culprit(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    rows = [dict(ROW, exact=True, source="Claude Code"),
+            dict(ROW, exact=False, source="Antigravity (Fallback)")]
+    assert relay.estimated_sources(rows) == ["Antigravity (Fallback)"]
+
+
+# --- intent board -----------------------------------------------------------
+
+def test_start_publishes_mission_and_peers_can_read_it(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    monkeypatch.setattr(relay, "collect_local", lambda days=None: [])
+    relay.append_leg("start", mission="build the relay")
+    mine = relay.read_intents(include_local=True)
+    assert len(mine) == 1
+    assert mine[0]["mission"] == "build the relay"
+    assert mine[0]["active"] is True
+    assert relay.read_intents() == []  # a machine is not its own peer
+
+
+def test_end_marks_the_mission_inactive(monkeypatch, tmp_path):
+    relay = _fresh(monkeypatch, tmp_path)
+    monkeypatch.setattr(relay, "collect_local", lambda days=None: [])
+    relay.append_leg("start", mission="build the relay")
+    relay.append_leg("end")
+    intent = relay.read_intents(include_local=True)[0]
+    assert intent["active"] is False
+    # mid/end without a fresh --mission must not erase what start published
+    assert intent["mission"] == "build the relay"

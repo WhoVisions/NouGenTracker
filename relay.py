@@ -43,6 +43,7 @@ the push is best-effort.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -51,7 +52,7 @@ import subprocess
 import sys
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -167,6 +168,103 @@ ROLLUP_FIELDS: Tuple[str, ...] = (
     "cache_read", "reasoning",
 )
 
+#: Buckets counted when asking "how much of this is measured?". cache_read is
+#: excluded on purpose: it routinely runs 100x every other field, so including
+#: it turns a confidence figure into "percent of cache-reads measured" wearing
+#: a more important-sounding name.
+CONFIDENCE_FIELDS: Tuple[str, ...] = (
+    "input_tokens", "output_tokens", "cache_creation", "reasoning",
+)
+
+
+# ---------------------------------------------------------------------------
+# Overlap sketches
+#
+# Two machines that read the same synced log directory both report the same
+# calls, and summing them silently doubles a fleet total while every single
+# file still looks correct. Excluding a machine's own rollup (which we do) does
+# not catch that — the duplicate arrives wearing a different machine's name.
+#
+# Each machine-day therefore carries a bottom-k MinHash sketch of its call
+# fingerprints: ~0.5 KB regardless of call volume, and enough to estimate the
+# Jaccard similarity between any two machine-days.
+# ---------------------------------------------------------------------------
+
+SKETCH_VERSION = 1
+SKETCH_HASH = "blake2b-64"
+
+
+def sketch_k() -> int:
+    return _int_cfg("relay_sketch_k", 64)
+
+
+def call_fingerprint(inv: Any) -> int:
+    """A stable 64-bit id for one model call.
+
+    Deliberately does NOT include session_id. The same underlying call read
+    from two machines can carry different session ids depending on the log
+    format, and including it would suppress exactly the duplication this is
+    built to detect.
+    """
+    parts = [inv.timestamp.isoformat(), str(inv.model)] + [
+        str(getattr(inv, field, 0) or 0) for field in ROLLUP_FIELDS]
+    digest = hashlib.blake2b("\x1f".join(parts).encode("utf-8"), digest_size=8)
+    return int.from_bytes(digest.digest(), "big")
+
+
+def minhash(fingerprints: Iterable[int], k: Optional[int] = None) -> List[int]:
+    """Bottom-k sketch: the k smallest distinct fingerprints, ascending."""
+    return sorted(set(fingerprints))[:(k or sketch_k())]
+
+
+def jaccard(sketch_a: Sequence[int], sketch_b: Sequence[int],
+            k: Optional[int] = None) -> float:
+    """Estimate |A n B| / |A u B| from two bottom-k sketches.
+
+    k is clamped to the smaller sketch. Two machines may have been written by
+    builds configured with different k, and applying the reader's k to a
+    shorter sketch would understate the overlap — the direction that hides the
+    problem.
+    """
+    if not sketch_a or not sketch_b:
+        return 0.0
+    k = min(k or sketch_k(), len(sketch_a), len(sketch_b))
+    union = sorted(set(sketch_a) | set(sketch_b))[:k]
+    both = set(sketch_a) & set(sketch_b)
+    if not union:
+        return 0.0
+    return sum(1 for value in union if value in both) / len(union)
+
+
+def _encode_sketch(values: Sequence[int]) -> Dict[str, Any]:
+    """Serialize a sketch WITH its parameters — a reader must never have to
+    assume the k or the hash a writer used."""
+    return {
+        "version": SKETCH_VERSION,
+        "hash": SKETCH_HASH,
+        "k": sketch_k(),
+        "values": [f"{value:016x}" for value in values],
+    }
+
+
+def _decode_sketch(payload: Any) -> Tuple[List[int], Optional[int]]:
+    """(values, k). Unknown versions/hashes decode to empty rather than to a
+    wrong similarity — a bogus overlap warning trains people to ignore them."""
+    if not isinstance(payload, dict):
+        return [], None
+    if payload.get("version") != SKETCH_VERSION or payload.get("hash") != SKETCH_HASH:
+        LOG.warning("relay: ignoring sketch (version %s / hash %s)",
+                    payload.get("version"), payload.get("hash"))
+        return [], None
+    values = []
+    for item in payload.get("values") or []:
+        try:
+            values.append(int(str(item), 16))
+        except ValueError:
+            continue
+    k = payload.get("k")
+    return values, int(k) if isinstance(k, int) else None
+
 
 def collect_local(days: Optional[int] = None) -> List[Any]:
     """Every local invocation in the window, from all five source collectors."""
@@ -218,8 +316,60 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def sketches_by_day(invocations: Iterable[Any]) -> Dict[str, List[int]]:
+    """One bottom-k sketch per local day."""
+    per_day: Dict[str, List[int]] = defaultdict(list)
+    for inv in invocations:
+        per_day[inv.timestamp.strftime("%Y-%m-%d")].append(call_fingerprint(inv))
+    return {day: minhash(values) for day, values in per_day.items()}
+
+
+def confidence(rows: Sequence[Dict[str, Any]]) -> Optional[float]:
+    """Share of billable tokens that were MEASURED rather than inferred.
+
+    Returns None — not 1.0 — when there is nothing to judge. An empty corpus
+    reporting "100% measured" is wrong in the reassuring direction, which is
+    the worst direction for a number whose whole job is flagging doubt.
+    """
+    measured = inferred = 0
+    for row in rows:
+        total = sum(int(row.get(field, 0)) for field in CONFIDENCE_FIELDS)
+        if row.get("exact", True):
+            measured += total
+        else:
+            inferred += total
+    if measured + inferred == 0:
+        return None
+    return measured / (measured + inferred)
+
+
+def format_confidence(score: Optional[float]) -> str:
+    """Render a confidence ratio without rounding doubt away.
+
+    A corpus that is 99.97% measured must not print as a flat "100.0%" while
+    the line underneath names an inferred source — that reads as a
+    contradiction and teaches the reader to distrust both numbers.
+    """
+    if score is None:
+        return "unknown (nothing to judge)"
+    if score >= 1.0:
+        return "100% measured"
+    if score > 0.999:
+        return ">99.9% measured"
+    return f"{score:.1%} measured"
+
+
+def estimated_sources(rows: Sequence[Dict[str, Any]]) -> List[str]:
+    """Which sources are contributing inferred numbers, so a single parser
+    that stopped reporting exact counts is nameable instead of just dragging
+    the fleet percentage down anonymously."""
+    return sorted({str(row.get("source") or "?") for row in rows
+                   if not row.get("exact", True)})
+
+
 def export(days: Optional[int] = None,
-           rows: Optional[List[Dict[str, Any]]] = None) -> List[Path]:
+           rows: Optional[List[Dict[str, Any]]] = None,
+           invocations: Optional[Sequence[Any]] = None) -> List[Path]:
     """Write this machine's rollups, one file per day covered. Returns paths.
 
     ``rows`` lets a caller that already scanned pass the result in — scanning
@@ -231,11 +381,13 @@ def export(days: Optional[int] = None,
         raise RuntimeError(
             "relay: cannot resolve a machine identity; set RELAY_MACHINE or "
             "NOUGEN_MACHINE. An anonymous rollup would be unattributable.")
-    if rows is None:
-        rows = rollup_rows(collect_local(days))
+    if rows is None or invocations is None:
+        invocations = collect_local(days)
+        rows = rollup_rows(invocations)
     by_day: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for row in rows:
         by_day[row["day"]].append(row)
+    sketches = sketches_by_day(invocations)
 
     written: List[Path] = []
     generated = _utc_now().isoformat()
@@ -248,6 +400,7 @@ def export(days: Optional[int] = None,
             "generated_utc": generated,
             "tracker_version": getattr(tt, "__version__", "unknown"),
             "relay_version": __version__,
+            "sketch": _encode_sketch(sketches.get(day, [])),
             "rows": day_rows,
         })
         written.append(path)
@@ -285,6 +438,59 @@ def session_id(create: bool = False) -> str:
     return val
 
 
+def _current_path(machine: Optional[str] = None) -> Path:
+    """Where a machine publishes what it is working on RIGHT NOW."""
+    return _machine_dir(machine) / "current.json"
+
+
+def publish_intent(mission: str, phase: str, sid: str) -> Path:
+    """Announce this box's active mission to the fleet.
+
+    Rollups say what a machine DID. Nothing said what a machine is DOING, so
+    two boxes took the same instruction on 2026-07-31 and built the same
+    feature thirty minutes apart, each invisible to the other until both
+    pull requests existed. This is the missing half of the relay.
+    """
+    path = _current_path()
+    payload = {
+        "schema": SCHEMA_VERSION,
+        "machine": machine_id(),
+        "session": sid,
+        "phase": phase,
+        "mission": mission[:300],
+        "updated_utc": _utc_now().isoformat(),
+        "active": phase != "end",
+    }
+    if not mission and path.exists():
+        # mid/end without a fresh mission keep the one start published
+        try:
+            previous = json.loads(path.read_text(encoding="utf-8"))
+            payload["mission"] = str(previous.get("mission") or "")[:300]
+        except (OSError, ValueError):
+            pass
+    _write_json(path, payload)
+    return path
+
+
+def read_intents(include_local: bool = False) -> List[Dict[str, Any]]:
+    """What every other machine says it is working on."""
+    root = relay_dir()
+    local = machine_id()
+    out: List[Dict[str, Any]] = []
+    if not root.exists():
+        return out
+    for path in sorted(root.glob("*/current.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        machine = str(payload.get("machine") or "").lower()
+        if not machine or (machine == local and not include_local):
+            continue
+        out.append(payload)
+    return out
+
+
 def _baton_path(sid: str, day: Optional[str] = None) -> Path:
     day = day or _utc_now().strftime("%Y-%m-%d")
     return _machine_dir() / f"baton_{day}_{sid}.json"
@@ -300,13 +506,16 @@ def _totals_snapshot(rows: Sequence[Dict[str, Any]]) -> Dict[str, int]:
     return snapshot
 
 
-def append_leg(phase: str, note: str = "", days: Optional[int] = None) -> Path:
+def append_leg(phase: str, note: str = "", days: Optional[int] = None,
+               mission: str = "") -> Path:
     """Record one phase of this machine's leg and refresh its rollups."""
     if phase not in PHASES:
         raise ValueError(f"phase must be one of {PHASES}, got {phase!r}")
     sid = session_id(create=(phase == "start"))
-    rows = rollup_rows(collect_local(days))
-    export(days, rows=rows)
+    invocations = collect_local(days)
+    rows = rollup_rows(invocations)
+    export(days, rows=rows, invocations=invocations)
+    publish_intent(mission, phase, sid)
     path = _baton_path(sid)
     if path.exists():
         try:
@@ -319,11 +528,14 @@ def append_leg(phase: str, note: str = "", days: Optional[int] = None) -> Path:
     baton.setdefault("machine", machine_id())
     baton.setdefault("session", sid)
     baton.setdefault("legs", [])
+    if mission:
+        baton["mission"] = mission[:300]
     baton["legs"].append({
         "phase": phase,
         "ts_utc": _utc_now().isoformat(),
         "note": note[:500],
         "totals": _totals_snapshot(rows),
+        "confidence": confidence(rows),
     })
     _write_json(path, baton)
     return path
@@ -340,6 +552,51 @@ class PeerRollup:
     generated_utc: Optional[datetime]
     rows: List[Dict[str, Any]]
     path: Path
+    sketch: List[int] = field(default_factory=list)
+    sketch_k: Optional[int] = None
+
+
+@dataclass
+class Overlap:
+    """Two machine-days that appear to have counted the same calls."""
+    machine_a: str
+    day_a: str
+    machine_b: str
+    day_b: str
+    similarity: float
+
+
+def detect_overlaps(rollups: Sequence[PeerRollup],
+                    threshold: Optional[float] = None) -> List[Overlap]:
+    """Machine-day pairs whose sketches say they saw the same calls.
+
+    Days within ONE day of each other are compared, not just identical day
+    keys. Two boxes in different timezones bucket the same call into different
+    calendar days, and a same-day-only comparison would be blind to precisely
+    the fleet configuration most likely to double count.
+    """
+    if threshold is None:
+        threshold = float(_cfg("relay_overlap_threshold", 0.5, float))
+    found: List[Overlap] = []
+    usable = [r for r in rollups if r.sketch]
+    for i, first in enumerate(usable):
+        for second in usable[i + 1:]:
+            if first.machine == second.machine:
+                continue
+            try:
+                delta = abs((datetime.strptime(first.day, "%Y-%m-%d")
+                             - datetime.strptime(second.day, "%Y-%m-%d")).days)
+            except ValueError:
+                continue
+            if delta > 1:
+                continue
+            score = jaccard(first.sketch, second.sketch,
+                            k=min(x for x in (first.sketch_k, second.sketch_k,
+                                              sketch_k()) if x))
+            if score >= threshold:
+                found.append(Overlap(first.machine, first.day,
+                                     second.machine, second.day, score))
+    return sorted(found, key=lambda o: -o.similarity)
 
 
 def read_peers(include_local: bool = False) -> List[PeerRollup]:
@@ -378,12 +635,15 @@ def read_peers(include_local: bool = False) -> List[PeerRollup]:
                 generated = datetime.fromisoformat(raw)
             except ValueError:
                 generated = None
+        values, k = _decode_sketch(payload.get("sketch"))
         peers.append(PeerRollup(
             machine=machine,
             day=str(payload.get("day") or ""),
             generated_utc=generated,
             rows=list(payload.get("rows") or []),
             path=path,
+            sketch=values,
+            sketch_k=k,
         ))
     return peers
 
@@ -609,6 +869,40 @@ def _stamp_mid() -> None:
     path.write_text(_utc_now().isoformat(), encoding="utf-8")
 
 
+def print_intent_board(intents: Sequence[Dict[str, Any]]) -> None:
+    """Who else is mid-mission. Printed at start so a second box can see the
+    first one working before it repeats the work."""
+    active = [i for i in intents if i.get("active")]
+    if not active:
+        return
+    print()
+    print("OTHER MACHINES CURRENTLY WORKING")
+    print("-" * 66)
+    for intent in active:
+        when = str(intent.get("updated_utc") or "")[:16].replace("T", " ")
+        print(f"  {intent.get('machine'):<12} {when:<18} "
+              f"{intent.get('phase', '?')}")
+        print(f"    -> {intent.get('mission') or '(no mission stated)'}")
+    print("-" * 66)
+    print("  check these before starting — two boxes have already built the "
+          "same feature\n  thirty minutes apart on this fleet")
+
+
+def print_overlaps(overlaps: Sequence[Overlap]) -> None:
+    if not overlaps:
+        return
+    print()
+    print("!! OVERLAP — these machines appear to have counted the same calls:")
+    for overlap in overlaps:
+        span = (f"{overlap.day_a}" if overlap.day_a == overlap.day_b
+                else f"{overlap.day_a}/{overlap.day_b}")
+        print(f"     {span}  {overlap.machine_a} + {overlap.machine_b}  "
+              f"(Jaccard {overlap.similarity:.3f})")
+    print("     fleet totals are inflated by the shared portion — the numbers "
+          "are NOT corrected,\n     because guessing which copy to drop would "
+          "be a worse error than naming the doubt")
+
+
 def cmd_phase(args: argparse.Namespace) -> int:
     phase = args.phase
     if phase == "mid" and not args.force and not mid_is_due():
@@ -619,7 +913,8 @@ def cmd_phase(args: argparse.Namespace) -> int:
     if phase == "start" and not args.no_pull:
         pull()
     try:
-        path = append_leg(phase, note=args.note or "", days=args.days)
+        path = append_leg(phase, note=args.note or "", days=args.days,
+                          mission=getattr(args, "mission", "") or "")
     except RuntimeError as exc:
         print(f"relay: {exc}", file=sys.stderr)
         return 1
@@ -632,18 +927,27 @@ def cmd_phase(args: argparse.Namespace) -> int:
     _print_identity()
     print(f"leg: {phase}  session {session_id()}  -> {path.name}")
     if phase in ("start", "end"):
+        print_intent_board(read_intents())
         print_peer_table(read_peers())
+        print_overlaps(detect_overlaps(read_peers(include_local=True)))
     return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
     _print_identity()
-    peers = read_peers()
+    everything = read_peers(include_local=True)
+    peers = [p for p in everything if p.machine != machine_id()]
+    local = [p for p in everything if p.machine == machine_id()]
+    print_intent_board(read_intents(include_local=args.all))
     print_peer_table(peers)
-    mine = read_peers(include_local=True)
-    local = [p for p in mine if p.machine == machine_id()]
-    print(f"\nlocal rollups on disk: {len(local)}"
-          f"   peer rollups: {len(peers)}")
+    print_overlaps(detect_overlaps(everything))
+    score = confidence([row for p in everything for row in p.rows])
+    print(f"\nlocal rollups on disk: {len(local)}   peer rollups: {len(peers)}")
+    print(f"fleet confidence: {format_confidence(score)} "
+          "(billable tokens; cache-read excluded)")
+    inferred = estimated_sources([row for p in everything for row in p.rows])
+    if inferred:
+        print(f"  inferred by: {', '.join(inferred)}")
     return 0
 
 
@@ -691,9 +995,15 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--quiet", action="store_true", help="hook mode: no output")
         sub.add_argument("--force", action="store_true",
                          help="ignore the mid-checkpoint throttle")
+        sub.add_argument("--mission", default="",
+                         help="what this box is working on — published to the "
+                              "fleet so peers can see it before duplicating it")
         sub.set_defaults(func=cmd_phase, phase=phase)
 
-    status = subs.add_parser("status", help="identity, peers and freshness")
+    status = subs.add_parser(
+        "status", help="identity, peers, freshness, overlap and confidence")
+    status.add_argument("--all", action="store_true",
+                        help="include this machine in the intent board")
     status.set_defaults(func=cmd_status)
 
     exp = subs.add_parser("export", help="write rollups without touching a baton")

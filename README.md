@@ -68,11 +68,16 @@ One box only ever knew its own spend. The relay passes a **baton** between machi
 single report can tell the truth about a day. A leg has three phases, and each is a command:
 
 ```bash
-python relay.py start    # take the baton: pull peers, open a leg
+python relay.py start --mission "what this box is about to work on"
 python relay.py mid      # checkpoint: re-export and stamp progress
 python relay.py end      # hand off: final export, commit, push
-python relay.py status   # who is on the relay, and how fresh each one is
+python relay.py status   # peers, freshness, overlap and confidence
 ```
+
+`--mission` is the half that stops duplicated work. Rollups say what a machine
+*did*; the intent board says what a machine is *doing*, published at `start` and read
+by every peer before it begins. Two boxes on this fleet took the same instruction and
+built the same feature thirty minutes apart because nothing carried that signal.
 
 Then any report blends them in automatically:
 
@@ -96,8 +101,22 @@ Design rules this follows:
   not by a redaction pass.
 - **One file per machine per day**, so concurrent machines never write the same path and
   therefore never conflict. No shared index to corrupt.
-- **Never double count.** A machine refuses to read its own rollup back as a peer, and the
-  check is on the `machine` field rather than the folder name.
+- **Never double count — twice over.** A machine refuses to read its own rollup back as a
+  peer, checked on the `machine` field rather than the folder name. That catches the easy
+  case. The hard one is two machines reading the *same synced log directory*, where the
+  duplicate arrives wearing a different machine's name and every individual file still
+  looks correct. Each machine-day therefore carries a 64-wide bottom-k MinHash sketch of
+  its call fingerprints (~0.5 KB regardless of call volume); the reader estimates Jaccard
+  similarity between machine-days and **says so** when it is high. Days within one of each
+  other are compared, not just identical dates, because two boxes in different timezones
+  bucket the same call into different calendar days. Totals are **not** silently corrected:
+  guessing which copy to drop would be a worse error than naming the doubt.
+- **Say how much is actually measured.** Some providers report usage; others are inferred
+  from text length, and summing them into one number hides that. Reports print the share of
+  billable tokens that were measured, and name the sources contributing inferred ones.
+  `cache_read` is excluded from that ratio — it routinely runs 100× every other field, so
+  including it turns the figure into "percent of cache-reads measured" wearing a more
+  important-sounding name. An empty corpus reports **unknown**, never 100%.
 - **A quiet peer shows as an age, never as a smaller total.** The freshness table prints
   every run; anything past `RELAY_STALE_HOURS` (default 48) is marked `STALE`.
 - **Transport failure is never fatal.** Rollups are written locally first; the git push is

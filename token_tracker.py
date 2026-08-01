@@ -1429,6 +1429,12 @@ class RelayScan:
     machines: Tuple[str, ...] = ()
     freshness: Tuple[Tuple[str, Optional[datetime], float, bool], ...] = ()
     available: bool = False
+    #: Share of billable tokens across the whole fleet that were measured
+    #: rather than inferred. None when there is nothing to judge — never 1.0,
+    #: which would read as certainty about an empty corpus.
+    fleet_confidence: Optional[float] = None
+    inferred_sources: Tuple[str, ...] = ()
+    overlaps: Tuple[Any, ...] = ()
 
 
 def parse_relay(window: Optional[Window] = None) -> RelayScan:
@@ -1487,6 +1493,13 @@ def parse_relay(window: Optional[Window] = None) -> RelayScan:
             scan.records += 1
     scan.machines = tuple(sorted(seen))
     scan.freshness = tuple(relay.peer_freshness(peers))
+    # Confidence and overlap are FLEET properties: they must include this box,
+    # or a report would judge the honesty of everyone except itself.
+    everything = relay.read_peers(include_local=True)
+    all_rows = [row for rollup in everything for row in rollup.rows]
+    scan.fleet_confidence = relay.confidence(all_rows)
+    scan.inferred_sources = tuple(relay.estimated_sources(all_rows))
+    scan.overlaps = tuple(relay.detect_overlaps(everything))
     return scan
 
 
@@ -2712,6 +2725,20 @@ def run_report(args: argparse.Namespace) -> int:
             print(f"--- Relay Peers (other machines: {machines}) ---")
             print(f"Rollup rows blended: {relay_scan.records}\n")
             print_peer_freshness(relay_scan)
+            try:
+                import relay as _r
+                rendered = _r.format_confidence(relay_scan.fleet_confidence)
+            except ImportError:  # pragma: no cover - relay proved importable above
+                rendered = str(relay_scan.fleet_confidence)
+            print(f"fleet confidence: {rendered} of billable tokens "
+                  "(cache-read excluded — it would swamp the ratio)")
+            if relay_scan.inferred_sources:
+                print(f"  inferred by: {', '.join(relay_scan.inferred_sources)}")
+            for overlap in relay_scan.overlaps:
+                print(f"  !! OVERLAP {overlap.machine_a} + {overlap.machine_b} "
+                      f"({overlap.day_a}/{overlap.day_b}) Jaccard "
+                      f"{overlap.similarity:.3f} — the blended total below is "
+                      "inflated by the shared calls")
             print()
             if relay_scan.records:
                 print_day_table(relay_scan.usage.by_day, relay_scan.usage.totals)
