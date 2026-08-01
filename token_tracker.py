@@ -256,14 +256,18 @@ EST = "est"
 MODEL_PRICING = {
     # ---- Claude: first-party list prices ----
     "claude-fable-5":             (10.00, 50.00, 1.000, DOC),
+    "claude-mythos-5":            (10.00, 50.00, 1.000, DOC),
+    # Opus 4.1 is 3x the 4.5+ rate, not the same. Absent, it fell through to the
+    # $1/$4 default — a 15x undercount on any log old enough to contain it.
+    "claude-opus-4-1":            (15.00, 75.00, 1.500, DOC),
+    "claude-haiku-3-5":           (0.80, 4.00, 0.080, DOC),
     # Opus 5 and Sonnet 5 were missing entirely, so 255M opus-5 tokens — the
     # second-largest model on this fleet — were billing at the $1/$4 unknown-model
     # default. Cache read is 0.1x base input on every Claude model.
     "claude-opus-5":              (5.00, 25.00, 0.500, DOC),
     "claude-opus-5-thinking":     (5.00, 25.00, 0.500, DOC),
-    # Sonnet 5 list price. Introductory pricing of $2.00 / $10.00 runs through
-    # 2026-08-31, so bills dated on or before that are overstated by ~33% here.
-    # Left at list because the ledger has no per-day price history to switch on.
+    # Sonnet 5 is dated — see PRICE_SCHEDULE. These are the post-intro rates and
+    # the fallback when a caller supplies no date.
     "claude-sonnet-5":            (3.00, 15.00, 0.300, DOC),
     "claude-sonnet-5-thinking":   (3.00, 15.00, 0.300, DOC),
     "claude-opus-4-8":            (5.00, 25.00, 0.500, DOC),
@@ -300,20 +304,20 @@ MODEL_PRICING = {
     # 3 Pro preview: no first-party row wired in yet -> estimate at pro tier.
     "gemini-3-pro-preview":       (2.00, 12.00, 0.20, EST),
     # 2.5 family: first-party list prices (<=200k tier).
-    "gemini-2.5-pro":             (1.25, 10.00, 0.31, DOC),
-    "gemini-2.5-flash":           (0.30, 2.50, 0.075, DOC),
+    "gemini-2.5-pro":             (1.25, 10.00, 0.125, DOC),
+    "gemini-2.5-flash":           (0.30, 2.50, 0.030, DOC),
     # 2.0 family: first-party list prices
     "gemini-2.0-flash":           (0.075, 0.30, 0.01875, DOC),
     "gemini-2.0-flash-lite":      (0.0375, 0.15, 0.009375, DOC),
     "gemini-2.0-pro":             (0.80, 3.20, 0.20, DOC),
     # Flash-lite tiers: estimate, no first-party row confirmed here.
-    "gemini-3.1-flash-lite":          (0.10, 0.40, 0.01, EST),
-    "gemini-3.1-flash-lite-preview":  (0.10, 0.40, 0.01, EST),
+    "gemini-3.1-flash-lite":          (0.25, 1.50, 0.025, DOC),
+    "gemini-3.1-flash-lite-preview":  (0.25, 1.50, 0.025, DOC),
     # ---- OpenAI: first-party list prices (cached input -> cache_read) ----
     "gpt-5.6-sol-ultra":          (5.00, 30.00, 0.50, DOC),
     "gpt-5.6-sol":                (5.00, 30.00, 0.50, DOC),
-    "gpt-5.6-terra":              (2.50, 15.00, 0.25, DOC),
-    "gpt-5.6-luna":               (1.00, 6.00, 0.10, DOC),
+    "gpt-5.6-terra":              (2.00, 12.00, 0.200, DOC),
+    "gpt-5.6-luna":               (0.20, 1.20, 0.020, DOC),
     "gpt-5.5":                    (5.00, 30.00, 0.50, DOC),
     "gpt-5.4":                    (2.50, 15.00, 0.25, DOC),
     "gpt-5.4-mini":               (0.75, 4.50, 0.075, DOC),
@@ -321,6 +325,20 @@ MODEL_PRICING = {
     "gpt-5.1-codex-mini":         (0.75, 4.50, 0.075, EST),
     # gpt-oss is open-weights; Dave runs it free via OpenRouter/local. Nominal host est.
     "gpt-oss-120b-medium":        (0.10, 0.40, 0.010, EST),
+    # --- audited against the official pricing pages, 2026-08-01 -------------
+    # Absent rows are not neutral: they fall through to DEFAULT_PRICING at
+    # $1/$4, so a missing premium model reads as an order of magnitude cheaper
+    # than it is. gpt-5.5-pro and gpt-5.4-pro at $30/$180 were a 30x undercount.
+    "gemini-3.6-flash":           (1.50, 7.50, 0.150, DOC),
+    "gemini-3.5-flash-lite":      (0.30, 2.50, 0.030, DOC),
+    "gemini-2.5-flash-lite":      (0.10, 0.40, 0.010, DOC),
+    "gemini-embedding-001":       (0.15, 0.00, 0.000, DOC),
+    "gpt-5.5-pro":                (30.00, 180.00, 0.000, DOC),
+    "gpt-5.4-pro":                (30.00, 180.00, 0.000, DOC),
+    "gpt-5.4-nano":               (0.20, 1.25, 0.020, DOC),
+    # The model Codex actually reports; absent, every Codex log billed at $1/$4.
+    "gpt-5.3-codex":              (1.75, 14.00, 0.175, DOC),
+    "chat-latest":                (5.00, 30.00, 0.500, DOC),
 }
 # Unknown model: conservative estimate so the bill never silently reads $0.
 DEFAULT_PRICING = (1.00, 4.00, 0.100, EST)
@@ -334,24 +352,74 @@ FREE_LOCAL_MODELS = {
 }
 
 
-def price_for(model_name):
+
+# --- dated pricing ---------------------------------------------------------
+#
+# A price is only true for a stretch of time, and this tool bills history: a day
+# in August and a day in September are charged at different rates for the same
+# model. A single number per model cannot express that, so it is wrong on one
+# side of the boundary no matter which value you pick.
+#
+# Sonnet 5 is the live case. Introductory pricing of $2/$10 runs through
+# 2026-08-31; $3/$15 applies from 2026-09-01. Billing August at list overstates
+# it by 50%, and billing September at intro understates it by a third.
+#
+# Entries are (first_day, last_day_inclusive, (input, output, cache_read, src)).
+# last_day of None means "still current".
+PRICE_SCHEDULE = {
+    "claude-sonnet-5": [
+        ("2000-01-01", "2026-08-31", (2.00, 10.00, 0.200, DOC)),
+        ("2026-09-01", None,         (3.00, 15.00, 0.300, DOC)),
+    ],
+}
+PRICE_SCHEDULE["claude-sonnet-5-thinking"] = PRICE_SCHEDULE["claude-sonnet-5"]
+
+
+def _scheduled_price(key, when):
+    """Dated price for a model, or None when the flat table should answer.
+
+    `when` is a YYYY-MM-DD string or a date/datetime. Without one there is no
+    way to choose, so the flat table wins — callers that do not care about
+    history keep the behaviour they had.
+    """
+    entries = PRICE_SCHEDULE.get(key)
+    if not entries or when is None:
+        return None
+    day = when.strftime("%Y-%m-%d") if hasattr(when, "strftime") else str(when)[:10]
+    if len(day) != 10:
+        return None
+    for start, end, price in entries:
+        if start <= day and (end is None or day <= end):
+            return price
+    return None
+
+
+def price_for(model_name, when=None):
     """Resolve (input, output, cache_read, source) for a model, ignoring the
-    ' (estimated)' suffix the Antigravity fallback parser appends."""
+    ' (estimated)' suffix the Antigravity fallback parser appends.
+
+    Pass `when` (the day the tokens were spent) to get the rate in force then.
+    Without it the flat table answers, which is the current rate for every model
+    that has never been repriced.
+    """
     key = (model_name or "").replace(" (estimated)", "").strip()
     # Free lanes: local Ollama/Gemma + OpenRouter ':free' routes.
     if key.endswith(":free") or key in FREE_LOCAL_MODELS:
         return (0.0, 0.0, 0.0, DOC)
+    dated = _scheduled_price(key, when)
+    if dated is not None:
+        return dated
     return MODEL_PRICING.get(key, DEFAULT_PRICING)
 
 
-def model_bill(model_name, d):
+def model_bill(model_name, d, when=None):
     """Honest API-equivalent cost (USD) for one model's token bucket.
 
     Cache-reads are billed at their discounted rate, cache-creation at 1.25x
     input, and reasoning at the output rate — the way a real invoice prices
     them. Returns (cost_usd, source_tag).
     """
-    inp, out, cache_read, src = price_for(model_name)
+    inp, out, cache_read, src = price_for(model_name, when)
     cost = (
         d.get("input_tokens", 0) * inp
         + d.get("cache_creation_input_tokens", 0) * inp * 1.25
