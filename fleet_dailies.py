@@ -760,7 +760,12 @@ def _git(*args: str, cwd: Optional[Path] = None) -> Tuple[int, str]:
         )
     except OSError as exc:
         return 1, str(exc)
-    return proc.returncode, (proc.stdout + proc.stderr).strip()
+    # `subprocess.run` only guarantees str for these when it did the capturing.
+    # A caller that redirects a stream, and every test that fakes this call,
+    # hands back None instead — and `None + str` raises inside the git helper
+    # every other function here depends on. 21 tests failed this way on a
+    # branch whose actual feature was sound.
+    return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 
 def install_hooks(repo_root: Optional[Path] = None) -> Tuple[bool, str]:
