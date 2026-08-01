@@ -1,0 +1,171 @@
+{
+  "counter": "22555db5d239",
+  "date": "2026-05-11",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 31680,
+    "input_tokens": 199,
+    "output_tokens": 3,
+    "reasoning": 296
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 36799903,
+    "input_tokens": 41250530,
+    "output_tokens": 73710,
+    "reasoning": 31511
+  },
+  "generated_at": "2026-07-31T22:58:35-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 310,
+  "machine": "phoebus",
+  "models": {
+    "auto-gemini-3": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 59055,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "gemini-2.5-flash": {
+      "cache_creation": 0,
+      "cache_read": 666815,
+      "input_tokens": 1324027,
+      "output_tokens": 2933,
+      "reasoning": 612
+    },
+    "gemini-2.5-pro": {
+      "cache_creation": 0,
+      "cache_read": 113507,
+      "input_tokens": 239312,
+      "output_tokens": 808,
+      "reasoning": 782
+    },
+    "gemini-3-flash-preview": {
+      "cache_creation": 0,
+      "cache_read": 17348477,
+      "input_tokens": 20346762,
+      "output_tokens": 35897,
+      "reasoning": 23092
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 31680,
+      "input_tokens": 199,
+      "output_tokens": 3,
+      "reasoning": 296
+    },
+    "gemini-3.1-pro-preview": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 59747,
+      "output_tokens": 41,
+      "reasoning": 133
+    },
+    "gemini-3.1-pro-preview-customtools": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 122118,
+      "output_tokens": 343,
+      "reasoning": 263
+    },
+    "gpt-5.5": {
+      "cache_creation": 0,
+      "cache_read": 18671104,
+      "input_tokens": 19099509,
+      "output_tokens": 33688,
+      "reasoning": 6629
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "039f46138b9b03c0",
+    "03d0f65a5a1b7b79",
+    "05a2315e023b0559",
+    "073f2f5d34b8199d",
+    "0767b379e0cae191",
+    "0c10f93e16c58e48",
+    "0c6bc74f6b5e0fa5",
+    "0d6ead898525fd28",
+    "0db410e6dd05eb37",
+    "0ea57d2f8a69d028",
+    "0eef2ec332e555a9",
+    "1189c4c8708ebf13",
+    "118adc12e1c80596",
+    "1195cebff2c43265",
+    "119d1756571f7a4a",
+    "1205548f70def2f3",
+    "1289de9d050b1997",
+    "12c9ef00b11f6527",
+    "131ffba89ea8a96f",
+    "1371154f750c1cfb",
+    "13bfa9752c977d48",
+    "14eca0b7806e5e3d",
+    "164f53d57da84aa8",
+    "1650dc4fdf1bab57",
+    "1681e0c06582831c",
+    "169d020cf05c8bbb",
+    "1929ac133a4e625c",
+    "19a47bc6e621190b",
+    "1a017fa45f74601e",
+    "1aae62b965358415",
+    "1ac4640b8b74ad8b",
+    "1bfc2764409c6a25",
+    "1c88eb3141ad44fe",
+    "1e59676f507a98d1",
+    "1f9388048c7b58fd",
+    "1fc4fd56f4bccc0e",
+    "22ee33b4a3b97741",
+    "2300a39b51ac7b98",
+    "23c13e6f9af9d8f6",
+    "25214a2685e656cc",
+    "26db2590f9045e9b",
+    "27166d038d6bb198",
+    "2824fdb15a804c13",
+    "292d0cacb12ed077",
+    "2955a3de74fbce95",
+    "29a51853e67432ca",
+    "2bd26eeb4e97a4ff",
+    "2e150d2f8bca143a",
+    "2ebb9530439e5129",
+    "2ee3f5e0e0617e82",
+    "2f7161c1644dde26",
+    "2faf7a33612c7162",
+    "2fe9884a068c52c3",
+    "30a2b3872f9993bd",
+    "32d51d5bd9db20ae",
+    "35a561f556035289",
+    "35fc522ecb0198a5",
+    "36cc4d3e98715fb8",
+    "3702437e2592508b",
+    "38f11cad26623f01",
+    "3a9a8964b596b2f5",
+    "3ce41333b663855a",
+    "3d7ba0f10465f281",
+    "3f7eede5d6e4e8d9"
+  ],
+  "sources": {
+    "Gemini CLI": {
+      "cache_creation": 0,
+      "cache_read": 18160479,
+      "input_tokens": 22151220,
+      "output_tokens": 40025,
+      "reasoning": 25178
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 18671104,
+      "input_tokens": 19099509,
+      "output_tokens": 33688,
+      "reasoning": 6629
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 36831583,
+    "input_tokens": 41250729,
+    "output_tokens": 73713,
+    "reasoning": 31807
+  }
+}

@@ -1,0 +1,40 @@
+#!/bin/sh
+# Stamp every commit with the machine and agent that authored it.
+#
+# With several machines and several agent lanes pushing to one repo, the git
+# author field answers "which human account" and nothing else. These trailers
+# answer "which computer, which lane" — the questions you actually ask when
+# two histories collide.
+#
+# Enable per clone (hooks are not themselves tracked into .git/hooks):
+#     git config core.hooksPath .githooks
+#
+# Identity resolves the same way the handoff registry resolves it:
+# NOUGEN_MACHINE -> hostname, and NOUGEN_AGENT -> "unknown-agent".
+# git interpret-trailers is idempotent, so amends and rebases do not stack
+# duplicate lines.
+
+MSG_FILE="$1"
+SOURCE="$2"
+
+# Leave merges, squashes and explicit -m reuse alone: their messages are not
+# ours to annotate.
+case "$SOURCE" in
+    merge|squash) exit 0 ;;
+esac
+
+MACHINE="${NOUGEN_MACHINE:-$(hostname 2>/dev/null)}"
+[ -z "$MACHINE" ] && MACHINE="unknown-machine"
+AGENT="${NOUGEN_AGENT:-unknown-agent}"
+
+# Lowercase and slugify to match the handoff filenames, so a grep for a machine
+# finds both its commits and its handoffs.
+MACHINE=$(printf '%s' "$MACHINE" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')
+
+git interpret-trailers --in-place \
+    --if-exists replace \
+    --trailer "Machine: $MACHINE" \
+    --trailer "Agent: $AGENT" \
+    "$MSG_FILE"
+
+exit 0

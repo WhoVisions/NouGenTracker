@@ -1,0 +1,66 @@
+{
+  "counter": "22555db5d239",
+  "date": "2026-05-24",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 470724,
+    "input_tokens": 2141,
+    "output_tokens": 1136,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-07-31T22:58:35-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 15,
+  "machine": "phoebus",
+  "models": {
+    "gemini-3.5-flash-high (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 470724,
+      "input_tokens": 2141,
+      "output_tokens": 1136,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "02ef6b1d41f5d3e8",
+    "16c28fe266e8116f",
+    "1aed70087ae468c2",
+    "1d7bbb85d6e3b670",
+    "3f1093daaf387db9",
+    "6c34971695f4030b",
+    "773ee64cadf70c05",
+    "846dfa798162d026",
+    "88cfcee6a09edcc3",
+    "906495a333e48efc",
+    "9b1799e898327d73",
+    "cb7a8e4ed37d8601",
+    "cf92d0b91bc5c191",
+    "d8e3cfd845de1f8f",
+    "f44306a2d2caaff9"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 470724,
+      "input_tokens": 2141,
+      "output_tokens": 1136,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 470724,
+    "input_tokens": 2141,
+    "output_tokens": 1136,
+    "reasoning": 0
+  }
+}
