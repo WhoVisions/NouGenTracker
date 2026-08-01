@@ -191,10 +191,22 @@ def test_my_usage_declares_itself_estimated(monkeypatch, tmp_path):
 
 
 def test_empty_report_does_not_pretend_to_be_zero_usage(monkeypatch, tmp_path):
+    """No dailies in THIS checkout is not the same claim as no fleet spend.
+
+    A shared working tree gets its branch switched by whoever is using it, and
+    dailies/ exists only on some branches. The empty answer therefore has to
+    name the clone and branch it read, or it reads as "the fleet spent
+    nothing" — confidently, and wrongly.
+    """
     mod = _load(monkeypatch, tmp_path)
     monkeypatch.setattr(mod, "run_tracker", lambda a, k: ("", 0.0))
-    text = _call(mod, monkeypatch, "fleet_token_usage")["result"]["content"][0]["text"]
-    assert "no machine has published" in text.lower()
+    out = _call(mod, monkeypatch, "fleet_token_usage")["result"]
+    text = out["content"][0]["text"].lower()
+    assert "not about whether" in text          # refuses the wrong reading
+    assert str(tmp_path).lower() in text        # names the checkout
+    assert "branch" in text
+    assert out["structuredContent"]["machines"] == []
+    assert "dailies_machines" in out["structuredContent"]
 
 
 # --- failure behaviour ------------------------------------------------------
