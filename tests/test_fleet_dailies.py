@@ -375,3 +375,60 @@ def test_token_totals_are_unchanged_when_no_prices_are_supplied(tmp_path):
     agg = fd.aggregate(fd.load_fleet(tmp_path))
     assert agg["totals"]["input_tokens"] == 500
     assert agg["spend"]["priced"] is False
+
+
+# --- dirty-tree counters --------------------------------------------------
+
+def test_a_clean_tree_stamps_a_plain_counter():
+    assert not fd.counter_fingerprint().endswith(fd.DIRTY_SUFFIX)
+
+
+def test_an_uncommitted_tracker_edit_is_marked_dirty(tmp_path, monkeypatch):
+    """The regression: whoart published 15 dailies stamped 71aef8ff08fa, and no
+    commit in the repo reproduces that value. The export ran against uncommitted
+    edits, so the counting version it names cannot be looked up."""
+    tracker = fd.TRACKER_SOURCE
+    original = tracker.read_text(encoding="utf-8")
+    try:
+        # Change a counting function's behaviour, do not commit it.
+        edited = original.replace("def usage_of(rec):", "def usage_of(rec):\n    _ = 1", 1)
+        assert edited != original, "anchor for the edit was not found"
+        tracker.write_text(edited, encoding="utf-8")
+
+        counter = fd.counter_fingerprint()
+        assert counter.endswith(fd.DIRTY_SUFFIX), (
+            "a counter computed from uncommitted code must never look reproducible"
+        )
+    finally:
+        tracker.write_text(original, encoding="utf-8")
+
+
+def test_two_exports_from_the_same_dirty_tree_still_match(tmp_path):
+    """Dirty must stay comparable to itself — the marker records provenance,
+    it does not make every run unique."""
+    tracker = fd.TRACKER_SOURCE
+    original = tracker.read_text(encoding="utf-8")
+    try:
+        tracker.write_text(
+            original.replace("def usage_of(rec):", "def usage_of(rec):\n    _ = 2", 1),
+            encoding="utf-8",
+        )
+        assert fd.counter_fingerprint() == fd.counter_fingerprint()
+    finally:
+        tracker.write_text(original, encoding="utf-8")
+
+
+def test_unknowable_provenance_is_not_reported_as_dirty(tmp_path):
+    """Outside a work tree there is no HEAD to compare against. That is the
+    same answer a clean checkout gives, and it is the right default for the
+    many places this runs with no repository at all."""
+    stray = tmp_path / "token_tracker.py"
+    stray.write_text("def usage_of(rec):\n    return {}\n", encoding="utf-8")
+    assert not fd.counter_fingerprint(stray).endswith(fd.DIRTY_SUFFIX)
+
+
+def test_a_dirty_counter_does_not_collide_with_its_clean_form():
+    """The marked and unmarked forms must be distinguishable as strings, so an
+    aggregator grouping by counter never merges them."""
+    clean = fd.counter_fingerprint()
+    assert clean + fd.DIRTY_SUFFIX != clean

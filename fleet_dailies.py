@@ -99,6 +99,23 @@ TRACKER_SOURCE = REPO_ROOT / "token_tracker.py"
 #: ones written by the parser that double-counted.
 UNSTAMPED = "unstamped"
 
+#: Suffix for a counter computed from a working tree that does not match HEAD.
+#: A fingerprint's whole job is to name a counting version someone can later
+#: look up. Proven on 2026-08-01: whoart published 15 dailies stamped
+#: 71aef8ff08fa, and no commit in the repo reproduces that value — every
+#: committed token_tracker.py, including the one on the branch they published
+#: from, fingerprints to 22555db5d239. The export had run against uncommitted
+#: edits. Nothing was wrong with the hash; it faithfully described code that
+#: was never persisted, so the version it names cannot be retrieved.
+#:
+#: Marking it is strictly better than either alternative. Silently stamping a
+#: dirty tree produces an unreproducible id that still looks authoritative;
+#: refusing to export blocks the ordinary case of testing a parser change
+#: before committing it. A marked counter stays comparable to itself — two
+#: dirty exports from the same tree still match — while never being mistaken
+#: for a version anyone can check out.
+DIRTY_SUFFIX = "+dirty"
+
 # The token fields every record carries. Kept explicit rather than derived so a
 # new field in token_tracker.py cannot silently change the on-disk schema.
 TOKEN_FIELDS = (
@@ -188,6 +205,33 @@ def _without_docstrings(node: ast.AST) -> ast.AST:
     return node
 
 
+def _tracker_differs_from_head(path: Path) -> bool:
+    """Whether the tracker source on disk differs from the committed one.
+
+    Answers "can someone else reproduce this fingerprint?" — which is the only
+    question a counting version is asked. Compared by content rather than via
+    `git status`, so an untracked or unstaged edit counts the same as a staged
+    one: what matters is whether the bytes that produced these numbers exist in
+    the repository, not how git currently classifies them.
+
+    Unknowable is not dirty. Outside a work tree, without git, or on a file git
+    does not track, this returns False and the caller stamps a plain
+    fingerprint — the same answer a clean checkout gives, which is the right
+    default for the many places this runs with no repository at all.
+    """
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+    except (ValueError, OSError):
+        return False
+    code, committed = _git("show", f"HEAD:{rel.as_posix()}")
+    if code != 0:
+        return False
+    try:
+        return path.read_text(encoding="utf-8", errors="replace") != committed + "\n"
+    except OSError:
+        return False
+
+
 def counter_fingerprint(source: Optional[Path] = None) -> str:
     """A short digest of the code that decides what counts as a token.
 
@@ -212,6 +256,7 @@ def counter_fingerprint(source: Optional[Path] = None) -> str:
         tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
     except (OSError, SyntaxError, ValueError):
         return UNSTAMPED
+    dirty = _tracker_differs_from_head(path)
 
     found: Dict[str, str] = {}
     for node in ast.walk(tree):
@@ -220,7 +265,7 @@ def counter_fingerprint(source: Optional[Path] = None) -> str:
 
     parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
     digest = hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6)
-    return digest.hexdigest()
+    return digest.hexdigest() + (DIRTY_SUFFIX if dirty else "")
 
 
 def counter_of(record: Dict[str, Any]) -> str:
