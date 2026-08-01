@@ -101,12 +101,21 @@ UNSTAMPED = "unstamped"
 
 #: Suffix for a counter computed from a working tree that does not match HEAD.
 #: A fingerprint's whole job is to name a counting version someone can later
-#: look up. Proven on 2026-08-01: whoart published 15 dailies stamped
-#: 71aef8ff08fa, and no commit in the repo reproduces that value — every
-#: committed token_tracker.py, including the one on the branch they published
-#: from, fingerprints to 22555db5d239. The export had run against uncommitted
-#: edits. Nothing was wrong with the hash; it faithfully described code that
-#: was never persisted, so the version it names cannot be retrieved.
+#: look up.
+#:
+#: The story this constant was written from has since been measured and is the
+#: wrong way round. It read: whoart published 15 dailies stamped 71aef8ff08fa,
+#: no commit reproduces that, so whoart exported dirty. Re-measured 2026-08-01
+#: on blade1tb against this file at 9a99a76 — every committed token_tracker.py
+#: (main, feat/fleet-spend, feat/fleet-dailies) fingerprints to exactly
+#: 71aef8ff08fa. whoart's stamp is correct and retrievable; their 15 days need
+#: no re-export. The digest that matched no commit was 22555db5d239, computed
+#: on the reporting box by a hasher it had not committed — invisible to a check
+#: that watched only token_tracker.py. See _counting_is_dirty().
+#:
+#: The marker is still right, for the reason below; only its founding example
+#: was inverted, and an accusation that survives in a comment outlives the
+#: correction that followed it.
 #:
 #: Marking it is strictly better than either alternative. Silently stamping a
 #: dirty tree produces an unreproducible id that still looks authoritative;
@@ -205,8 +214,29 @@ def _without_docstrings(node: ast.AST) -> ast.AST:
     return node
 
 
-def _tracker_differs_from_head(path: Path) -> bool:
-    """Whether the tracker source on disk differs from the committed one.
+def _counting_is_dirty(tracker: Path) -> bool:
+    """Both files the digest depends on, not just the hashed one.
+
+    The fingerprint is a function of two sources: the tracker whose parsers get
+    hashed, and THIS file, which holds COUNTING_SURFACE — the tuple naming which
+    functions count as counting. Watching only the tracker leaves the larger
+    hole open, because an edit to COUNTING_SURFACE moves every digest in the
+    fleet while the tracker sits clean, and nothing is marked.
+
+    Measured 2026-08-01, and it is why this exists: a box reported that whoart's
+    `71aef8ff08fa` matched no commit in the repository and concluded whoart had
+    exported from a dirty tree. Every committed token_tracker.py — main,
+    feat/fleet-spend and feat/fleet-dailies — reproduces exactly that value
+    under the committed hasher. The digest nobody could reproduce was the
+    reporting box's own `22555db5d239`, computed by an uncommitted hasher this
+    check could not see, and it read as authoritative in the direction that
+    condemned 15 days of good data.
+    """
+    return _differs_from_head(tracker) or _differs_from_head(Path(__file__).resolve())
+
+
+def _differs_from_head(path: Path) -> bool:
+    """Whether a source file on disk differs from the committed one.
 
     Answers "can someone else reproduce this fingerprint?" — which is the only
     question a counting version is asked. Compared by content rather than via
@@ -271,7 +301,7 @@ def counter_fingerprint(source: Optional[Path] = None) -> str:
         tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
     except (OSError, SyntaxError, ValueError):
         return UNSTAMPED
-    dirty = _tracker_differs_from_head(path)
+    dirty = _counting_is_dirty(Path(path))
 
     found: Dict[str, str] = {}
     for node in ast.walk(tree):

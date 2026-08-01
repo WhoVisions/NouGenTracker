@@ -432,3 +432,46 @@ def test_a_dirty_counter_does_not_collide_with_its_clean_form():
     aggregator grouping by counter never merges them."""
     clean = fd.counter_fingerprint()
     assert clean + fd.DIRTY_SUFFIX != clean
+
+
+def test_an_uncommitted_hasher_marks_the_counter_dirty(tmp_path):
+    """The gap that produced a false accusation.
+
+    COUNTING_SURFACE lives in fleet_dailies.py, not in the tracker, so editing
+    it changes every digest in the fleet while the tracker sits clean. A check
+    that watched only the hashed file reported those digests as reproducible.
+    """
+    hasher = pathlib.Path(fd.__file__).resolve()
+    original = hasher.read_text(encoding="utf-8")
+    try:
+        hasher.write_text(original + "\n# an uncommitted edit to the hasher\n",
+                          encoding="utf-8")
+        assert fd.counter_fingerprint().endswith(fd.DIRTY_SUFFIX), (
+            "a digest produced by an uncommitted hasher must not look retrievable"
+        )
+    finally:
+        hasher.write_text(original, encoding="utf-8")
+
+
+def test_every_committed_tracker_reproduces_the_published_counter():
+    """The measurement that inverted the original diagnosis: whoart's published
+    stamp IS retrievable from the repository, on every branch that has a
+    tracker. Guards the claim so it cannot quietly rot back."""
+    import subprocess
+    digests = set()
+    for ref in ("origin/main", "origin/feat/fleet-spend"):
+        blob = subprocess.run(["git", "show", f"{ref}:token_tracker.py"],
+                              cwd=str(fd.REPO_ROOT), capture_output=True,
+                              encoding="utf-8", errors="replace")
+        if blob.returncode != 0:
+            continue
+        scratch = fd.REPO_ROOT / ".pytest-tracker-probe.py"
+        scratch.write_text(blob.stdout, encoding="utf-8")
+        try:
+            digests.add(fd.counter_fingerprint(scratch).removesuffix(fd.DIRTY_SUFFIX))
+        finally:
+            scratch.unlink(missing_ok=True)
+
+    if not digests:
+        pytest.skip("no remote refs in this clone")
+    assert len(digests) == 1, f"committed trackers disagree on counting: {digests}"
