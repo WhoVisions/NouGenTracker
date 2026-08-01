@@ -1,0 +1,64 @@
+{
+  "counter": "71aef8ff08fa",
+  "date": "2026-07-16",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 16553,
+    "cache_read": 571184,
+    "input_tokens": 24,
+    "output_tokens": 5062,
+    "reasoning": 0
+  },
+  "generated_at": "2026-07-31T23:50:17-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 13,
+  "machine": "whoart",
+  "models": {
+    "claude-opus-4-8": {
+      "cache_creation": 16553,
+      "cache_read": 571184,
+      "input_tokens": 24,
+      "output_tokens": 5062,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "0a9898526bb00e0f",
+    "1050ad56b81aa414",
+    "3d02924b44530ff9",
+    "70a8c5f87be5a057",
+    "75f121338a307b1c",
+    "8e804940beda9f59",
+    "b6d9c4515c71ab4e",
+    "c1fb7e6288bfa0fc",
+    "df7e305dd7e8c408",
+    "f1c83cf900631f4e",
+    "f1ff0a6eb915a728",
+    "f8b94c04aef89771",
+    "fc6593387a835c3f"
+  ],
+  "sources": {
+    "Claude Code": {
+      "cache_creation": 16553,
+      "cache_read": 571184,
+      "input_tokens": 24,
+      "output_tokens": 5062,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 16553,
+    "cache_read": 571184,
+    "input_tokens": 24,
+    "output_tokens": 5062,
+    "reasoning": 0
+  }
+}
