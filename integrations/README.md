@@ -1,14 +1,34 @@
 # Integrations — letting an agent answer its own token questions
 
-The tracker knew what every agent CLI on the machine had spent. The agents did
-not. "How many tokens have I used?" went to a human with a terminal, and the
-usual answer was a guess from conversation length.
+Every agent on this machine writes a log of what it spent. None of them could
+read it, so "how many tokens have I used?" went to a human with a terminal and
+the usual answer was a guess from conversation length.
 
-This directory connects the two.
+`nougen_usage_mcp.py` is an MCP server that closes that gap for **every**
+MCP-speaking CLI — Antigravity, Claude Code, the Gemini CLI, Codex.
 
-## `agy_usage_mcp.py` — MCP server
+## Install
 
-A zero-dependency JSON-RPC stdio server exposing five tools:
+```bash
+python integrations/nougen_usage_mcp.py --install --dry-run   # see the plan
+python integrations/nougen_usage_mcp.py --install             # do it
+```
+
+It probes for each CLI's registry, backs up every file it touches, merges
+rather than overwrites, and skips anything not installed:
+
+| CLI | Registry | Format |
+|---|---|---|
+| Antigravity (`agy`) | `~/.gemini/config/mcp_config.json` | JSON |
+| Gemini CLI | `~/.gemini/settings.json` | JSON |
+| Claude Code | `~/.claude.json` | JSON |
+| Codex | `~/.codex/config.toml` | TOML |
+
+Restart each CLI afterwards. Then copy `token_usage_SKILL.md` to your agent's
+skills directory — for Antigravity that is
+`~/.gemini/config/skills/token-usage/SKILL.md`.
+
+## Tools
 
 | Tool | Answers |
 |---|---|
@@ -18,67 +38,73 @@ A zero-dependency JSON-RPC stdio server exposing five tools:
 | `token_cost_by_model` | which model is costing the most |
 | `token_usage_provenance` | where the numbers came from, and which are estimated |
 
+Each returns **prose to quote and a validated object to compute with** —
+`structuredContent` alongside the text, with `outputSchema` declared. Text-only
+forces an agent to re-parse a table it will eventually parse wrong.
+
+## Design commitments
+
+Each of these is a decision someone will otherwise re-open.
+
 **The tracker stays the single authority.** The server shells out to
 `token_tracker.py` rather than reimplementing pricing, so a price-table fix in
-this repo re-prices every answer with no change here. Results are cached for 15
-minutes (`AGY_USAGE_CACHE_TTL`) because a full scan reads hundreds of
-transcripts and nobody should pay for it twice in one conversation.
+this repo re-prices every answer with no change here. Duplicated pricing is how
+two components come to disagree about the same day.
 
-**Stdlib only, on purpose.** A CLI spawns this in whatever environment it
-happens to have; a missing package would turn a usage question into a crash.
-Every path resolves at runtime — `NOUGENTRACKER_DIR` first, then a probe of
-known checkout locations, then an error naming the variable to set. No drive
-letters, no usernames, nothing that only works on the box it was written on.
+**Stdlib only.** A CLI spawns this in whatever environment it happens to have; a
+missing package would turn a usage question into a crash. That constraint is why
+the Codex TOML edit is written by hand — `tomllib` is read-only and 3.11+, and a
+writer dependency would cost more than it saves. The edit is append-only and
+idempotent, which is what makes that safe.
 
-### Install (Antigravity / `agy`)
+**Uncertainty travels with the number.** Every result carries `cache_age_seconds`,
+whether it is `live` or `cached`, which sources were estimated rather than
+measured, and the disclaimers that belong beside it. A token count whose
+provenance was dropped is indistinguishable from one that was invented.
 
-Merge into `~/.gemini/config/mcp_config.json`:
+**stdout belongs to the protocol.** All logging goes to stderr. One stray print
+corrupts the stream and the failure looks like a broken client.
 
-```json
-{
-  "mcpServers": {
-    "nougen-usage": {
-      "command": "python",
-      "args": ["/path/to/integrations/agy_usage_mcp.py"],
-      "env": { "NOUGENTRACKER_DIR": "/path/to/NouGenTracker" }
-    }
-  }
-}
-```
+**Read-only, and it says so.** Every tool declares `readOnlyHint`,
+`idempotentHint` and `openWorldHint: false`, so a client can skip a confirmation
+prompt it would otherwise be right to show.
 
-Any MCP-speaking client works the same way — nothing in the server is
-Antigravity-specific.
+**Protocol versions are negotiated, not assumed.** `2025-06-18`, `2025-03-26` and
+`2024-11-05` are all answered correctly — one binary serving four CLIs that
+upgrade on their own schedules.
 
-### Verify without a client
+**Tool failures are content, not protocol errors.** A tracker that cannot be
+found returns `isError: true` with a message the agent can relay, instead of a
+JSON-RPC error the user never sees.
+
+## Verify without a client
 
 ```bash
-printf '%s\n%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | python agy_usage_mcp.py
+python integrations/nougen_usage_mcp.py --selftest
 ```
 
-## `agy_token_usage_SKILL.md` — the skill
+Thirteen checks covering protocol negotiation, schema/annotation completeness,
+argument rejection, unknown-tool rejection, the report parsers, and one live
+end-to-end tool call.
 
-Tools without instructions get used wrongly. Copy to
-`~/.gemini/config/skills/token-usage/SKILL.md`. It tells the agent which tool
-answers which question and, more importantly, three things to say out loud:
+## What the skill enforces
 
-- **Antigravity's own numbers are estimated, not measured** — that lane does not
-  persist exact counts. Claude Code, the Gemini CLI and Codex do.
-- **The cost is a shadow bill, not an invoice** — what the tokens would cost at
-  list price. Work on a subscription bills nothing extra.
-- **Cache-reads dominate the count and not the cost** — they run ~95% of volume
-  at a fraction of the input rate, so a total that looks alarming is usually
-  cache-read volume.
+Tools without instructions get used wrongly. `token_usage_SKILL.md` requires the
+agent to state three things when it reports a number:
 
-And one rule: **never answer a usage question by estimating.** A guessed token
-count is indistinguishable from a measured one to whoever reads it, and this
-project has already shipped a number that looked plausible and was nearly double
-what it should have been.
+- **Antigravity's counts are estimated**, not measured — that lane persists no
+  exact counts. Claude Code, Codex and the Gemini CLI do.
+- **The cost is a shadow bill, not an invoice.** Work on a subscription bills
+  nothing extra; the figure measures leverage, not money owed.
+- **Cache-reads dominate the count and not the cost** — ~95% of volume at a
+  fraction of the input rate, so an alarming total is usually cache-read volume.
+
+And one rule: **never answer a usage question by estimating.** A guessed count is
+indistinguishable from a measured one to whoever reads it, and this project has
+already shipped a plausible-looking number that was nearly double.
 
 ## A missing machine is not a cheap machine
 
-`fleet_token_usage` only sees machines that have published. A box that stopped
-publishing looks exactly like a box that stopped spending, so the skill requires
-the agent to name an absent machine rather than quote a smaller total as if it
-were complete.
+`fleet_token_usage` only sees machines that have published, and says so in its
+own payload. A box that stopped publishing looks exactly like a box that stopped
+spending, so the caveat travels with the data rather than living in this file.
