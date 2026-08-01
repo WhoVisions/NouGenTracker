@@ -223,11 +223,26 @@ def _tracker_differs_from_head(path: Path) -> bool:
         rel = path.resolve().relative_to(REPO_ROOT)
     except (ValueError, OSError):
         return False
-    code, committed = _git("show", f"HEAD:{rel.as_posix()}")
+    # Ask git whether the BYTES match, rather than comparing decoded text.
+    #
+    # The text comparison this replaces was wrong on every Windows box, and
+    # silently: `read_text(errors="replace")` decoded the file with the console
+    # default (cp1252 here), turning every em-dash into U+FFFD, while `git show`
+    # returned it correctly. The two strings could never be equal, so a clean
+    # tree stamped `+dirty` — quarantining that machine's exports from ever
+    # summing. `errors="replace"` is what made it silent: it cannot raise, so
+    # the mismatch had no symptom except a suffix nobody questioned.
+    #
+    # `hash-object` applies the same filters git used when writing the blob, so
+    # this also settles line endings and .gitattributes without special cases.
+    code, head_blob = _git("rev-parse", f"HEAD:{rel.as_posix()}")
+    if code != 0:
+        return False
+    code, disk_blob = _git("hash-object", "--", str(path))
     if code != 0:
         return False
     try:
-        return path.read_text(encoding="utf-8", errors="replace") != committed + "\n"
+        return head_blob.strip() != disk_blob.strip()
     except OSError:
         return False
 
@@ -757,6 +772,12 @@ def _git(*args: str, cwd: Optional[Path] = None) -> Tuple[int, str]:
             cwd=str(cwd or REPO_ROOT),
             capture_output=True,
             text=True,
+            # `text=True` alone decodes with the console default — cp1252 on
+            # Windows — and `git show` of any source file containing an em-dash
+            # raises UnicodeDecodeError inside subprocess's reader thread,
+            # taking down whatever called it. Git speaks UTF-8; say so.
+            encoding="utf-8",
+            errors="replace",
         )
     except OSError as exc:
         return 1, str(exc)
