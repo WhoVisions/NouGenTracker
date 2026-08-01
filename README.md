@@ -150,3 +150,39 @@ covers commits written by hand.
   multiplicative and spans three orders of magnitude here, and on raw values
   MAD inflates until nothing clears the threshold (max |z| = 1.81 across this
   fleet's 17 days — silence). In log space the same series peaks at 5.23.
+
+## Working on this repo from more than one machine
+
+This repo is worked from several boxes. Two mechanisms keep them from doing each
+other's work twice, both carried by git — no server, no daemon.
+
+**Before you start**, announce it:
+
+```bash
+relay check                                    # has another machine moved?
+relay claim take -s token_tracker.py -g "fix pricing table"
+# ... work ...
+relay claim release -s token_tracker.py
+relay create -g "what you did" -m "where you left off"
+```
+
+Records land in `.handoffs/`. Install the CLI from
+[NouGenRelay](https://github.com/who-visions/nougenrelay); if `relay` isn't on
+PATH after `pip install -e .`, `python -m nougen_relay` always works.
+
+**Commits carry their origin.** `.githooks/prepare-commit-msg` stamps every
+commit with `Machine:` and `Agent:` trailers, so `git log` answers "which box,
+which lane" rather than just "which GitHub account":
+
+```bash
+python3 token_tracker.py --install-hooks
+```
+
+This is per-clone — `core.hooksPath` lives in `.git/config` and cannot be
+committed — so a fresh clone starts unstamped until someone runs it. Nothing
+depends on it: `--publish` stamps its own commits, and the hook only covers
+commits written by hand.
+
+Skipping `relay check` is not free. The route-recommendations rewrite in this
+repo was written twice on two machines on the same afternoon, and one of the two
+was thrown away.
