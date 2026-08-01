@@ -237,23 +237,44 @@ def _tracker_differs_from_head(path: Path) -> bool:
     """Whether the COUNTING code on disk differs from the committed counting code.
 
     Answers "can someone else reproduce this fingerprint?" — the only question a
-    counting version is asked. Note the scope: the fingerprint is deliberately
-    AST-scoped to COUNTING_SURFACE so that comments and formatting do not churn
-    it, and the dirty check has to be scoped the same way or the two disagree.
+    counting version is asked. Two checks, in order, and both are needed.
 
-    Comparing whole files instead marks the counter unreproducible after any
-    edit anywhere in token_tracker.py — a changed print statement, a new CLI
-    flag — while the counting functions remain byte-identical to HEAD and the
-    fingerprint is, in fact, perfectly reproducible. That is a false positive,
-    it fires constantly during ordinary work, and a marker that cries wolf gets
-    ignored: the same reasoning that made the fingerprint AST-based in the
-    first place.
+    First, ask git whether the BYTES match. `hash-object` applies the same
+    filters git used writing the blob, so line endings and .gitattributes settle
+    themselves, and nothing is decoded — which matters because the decoded-text
+    comparison this replaces was wrong on every Windows box and silent about it:
+    `read_text(errors="replace")` turned every em dash into U+FFFD while
+    `git show` returned it correctly, so the two could never be equal and a
+    clean tree stamped `+dirty` forever. `errors="replace"` cannot raise, so the
+    only symptom was a suffix nobody questioned.
+
+    Identical bytes settle it. DIFFERENT bytes do not, and that is the second
+    check. The fingerprint is deliberately AST-scoped to COUNTING_SURFACE so
+    comments and formatting cannot churn it — so an edit to a print statement or
+    a new CLI flag leaves the counting code byte-identical to HEAD and the
+    fingerprint perfectly reproducible. Reporting that as dirty is a false
+    positive that fires during ordinary work, quarantines exports that were
+    fine, and trains people to ignore the marker: exactly the reasoning that
+    made the fingerprint AST-based in the first place. So on a byte mismatch,
+    compare what is actually hashed.
 
     Unknowable is not dirty. Outside a work tree, without git, or on a file git
     does not track, this returns False — the same answer a clean checkout
     gives, which is the right default for the many places this runs with no
     repository at all.
     """
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+    except (ValueError, OSError):
+        return False
+
+    code, head_blob = _git("rev-parse", f"HEAD:{rel.as_posix()}")
+    if code != 0:
+        return False
+    code, disk_blob = _git("hash-object", "--", str(path))
+    if code == 0 and head_blob.strip() == disk_blob.strip():
+        return False
+
     committed = _committed_source(path)
     if committed is None:
         return False
@@ -842,6 +863,11 @@ def _git(*args: str, cwd: Optional[Path] = None) -> Tuple[int, str]:
         )
     except OSError as exc:
         return 1, str(exc)
+    # And `subprocess.run` only guarantees str for these when it did the
+    # capturing itself. A caller that redirects a stream — and every test that
+    # fakes this call — gets None instead, so the coalesce is needed on top of
+    # the encoding fix, not instead of it. Both machines found this hour, from
+    # opposite ends: 21 faked-call test failures, and a live crash on Windows.
     return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 
