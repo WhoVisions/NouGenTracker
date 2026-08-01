@@ -302,13 +302,23 @@ def tool_fleet_usage(days: Optional[int] = None) -> Tuple[str, Dict[str, Any]]:
     report, age = run_tracker(args, f"fleet{days or 'all'}")
     block = tail_after(report, "Fleet totals", 45)
     machines = parse_machines(block)
+    context = tracker_context()
     if not block:
+        # Name the checkout and branch. "No dailies" almost always means this
+        # clone is on a branch that does not carry them — reporting it as an
+        # empty fleet would be a wrong answer wearing a confident tone.
+        where = (f"{context['tracker_dir']} on branch "
+                 f"{context['branch'] or 'unknown'}")
         return _result(
-            "No fleet totals available — no machine has published dailies to "
-            "this clone yet.", {"scope": "fleet", "machines": []}, age)
+            "No fleet totals available. The tracker clone being read is "
+            f"{where}, and it holds dailies for: "
+            + (", ".join(context["dailies_machines"]) or "no machines")
+            + ". This is a statement about that checkout, not about whether "
+              "the fleet has been spending.",
+            {"scope": "fleet", "machines": [], **context}, age)
     return _result(
         block, {"scope": "fleet", "days": days, "machines": machines,
-                "machine_count": len(machines),
+                "machine_count": len(machines), **context,
                 "total_spend_usd": round(sum(m["spend_usd"] for m in machines), 2),
                 "models": parse_models(block),
                 "estimated_sources": estimated_note(block),
@@ -327,10 +337,39 @@ def tool_cost_by_model(days: int = DEFAULT_DAYS) -> Tuple[str, Dict[str, Any]]:
                    age, [DISCLAIMERS["shadow"]])
 
 
+def tracker_context() -> Dict[str, Any]:
+    """Which checkout, on which branch, holding how many dailies.
+
+    A shared working tree gets its branch switched by whoever is using it, and
+    `dailies/` only exists on some branches — so the same question answered
+    twice can differ for a reason that has nothing to do with usage. The answer
+    has to carry the checkout it came from, or it is silently conditional.
+    """
+    root = tracker_dir()
+    context: Dict[str, Any] = {"tracker_dir": str(root) if root else None,
+                               "branch": None, "dailies_machines": []}
+    if root is None:
+        return context
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(root),
+            capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            context["branch"] = result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    dailies = root / "dailies"
+    if dailies.is_dir():
+        context["dailies_machines"] = sorted(
+            p.name for p in dailies.iterdir() if p.is_dir())
+    return context
+
+
 def tool_provenance() -> Tuple[str, Dict[str, Any]]:
+    context = tracker_context()
     root = tracker_dir()
     data = {
-        "tracker_dir": str(root) if root else None,
+        **context,
         "resolved_by": ("NOUGENTRACKER_DIR" if os.environ.get("NOUGENTRACKER_DIR")
                         else "probe"),
         "cache_dir": str(cache_dir()),
