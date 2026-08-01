@@ -19,6 +19,30 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import datetime as _dtm
 
+
+def _force_utf8_stdio():
+    """Windows consoles default to cp1252, which cannot encode this report's glyphs.
+
+    The warning markers are the whole point of the lines they sit on — an
+    overlap or a mixed-counting block is the loudest thing this tool prints —
+    and on a cp1252 console `print("⚠ ...")` does not degrade, it raises
+    UnicodeEncodeError and kills the run mid-report. Reconfigure rather than
+    strip: `errors="replace"` keeps a legacy console readable.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_force_utf8_stdio()
+
 DAYS = 2
 MONTH = None
 BY_PROVIDER = False
@@ -2449,6 +2473,19 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
             # from unstamped commits weeks later.
             print("  note: hooks not installed in this clone — run --install-hooks")
 
+        # This export used the current counting code. Any day this machine
+        # published under a different one is now incomparable to it, and only
+        # this machine can fix that — nobody else has its logs. So name the
+        # range and the command rather than leaving it to be noticed.
+        _cohorts = _fd.aggregate(_fd.load_fleet())["counters"]
+        _mine = _fd.stale_range(_cohorts["stale"], _machine)
+        if _mine:
+            _lo, _hi = _mine
+            print(f"  ⚠ {_lo}..{_hi} were exported by different counting code "
+                  f"and no longer agree with the days just written.")
+            print(f"    re-export them:  python token_tracker.py "
+                  f"--start {_lo} --end {_hi} --export")
+
         if PUBLISH:
             _ok, _msg = _fd.stamped_commit(
                 f"dailies({_machine}): publish {len(_paths)} day(s)", _paths
@@ -2470,9 +2507,25 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
                 print(f"  {_name:<28}{fmt(_t['input_tokens']):>12}"
                       f"{fmt(_t['output_tokens']):>12}{fmt(_t['cache_read']):>14}")
             _tot = _agg["totals"]
+            _cnt = _agg["counters"]
             print("  " + "-" * 64)
-            print(f"  {'FLEET':<28}{fmt(_tot['input_tokens']):>12}"
-                  f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}")
+            if _cnt["mixed"]:
+                # These numbers were produced by different counting code, so
+                # adding them is arithmetic on incomparable units. Printing one
+                # FLEET line anyway would hide that behind a number that looks
+                # exactly like a correct one — the failure this whole mechanism
+                # exists to prevent. Split it instead.
+                for _c, _ct in sorted(_agg["by_counter"].items(),
+                                      key=lambda kv: kv[0] != _cnt["current"]):
+                    _tag = "current" if _c == _cnt["current"] else "STALE"
+                    _label = _c if _c == _fd.UNSTAMPED else _c[:8]
+                    print(f"  {'counter ' + _label + ' (' + _tag + ')':<28}"
+                          f"{fmt(_ct['input_tokens']):>12}"
+                          f"{fmt(_ct['output_tokens']):>12}{fmt(_ct['cache_read']):>14}")
+                print(f"  {'FLEET':<28}{'— not summed: see below':>38}")
+            else:
+                print(f"  {'FLEET':<28}{fmt(_tot['input_tokens']):>12}"
+                      f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}")
             # How much of that total is measured rather than inferred. A number
             # without this is not a number you can act on.
             _conf = _agg["confidence"]
@@ -2493,6 +2546,26 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
                     print(f"      {_o['date']}  {' + '.join(_o['machines'])}  "
                           f"(Jaccard {_o['jaccard']})")
                 print("      totals above are inflated by the shared portion")
+
+            # Same class of failure as OVERLAP — the total looks right while
+            # every file in it looks right too — so it gets the same volume.
+            if _cnt["mixed"]:
+                print()
+                print("  ⚠ MIXED COUNTING — these machine-days were produced by "
+                      "code that counts differently:")
+                _by_machine_stale = defaultdict(list)
+                for _m, _d, _c in _cnt["stale"]:
+                    _by_machine_stale[_m].append(_d)
+                for _m, _days in sorted(_by_machine_stale.items()):
+                    print(f"      {_m:<16}{len(_days):>4} day(s)  "
+                          f"{min(_days)}..{max(_days)}")
+                print("      They cannot be added to the current cohort. Each box")
+                print("      re-exports its own:  python token_tracker.py "
+                      "--start <first> --end <last> --export")
+                if not _cnt["local_is_current"]:
+                    print(f"      NOTE: this box counts as {_cnt['local'][:8]}, and the "
+                          f"corpus is mostly {_cnt['current'][:8]} —")
+                    print("      publishing from here would add a third cohort. Pull first.")
 
             if _agg["anomalies"]:
                 print()

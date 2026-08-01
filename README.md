@@ -126,6 +126,19 @@ covers commits written by hand.
   report usage; others are inferred from text length. These are tracked
   separately, because folding a guess into a measurement produces a number you
   cannot reason about. On this fleet only ~32% of reported tokens are measured.
+- **counting version** — `schema` says a daily file can be *read*. It says
+  nothing about whether its numbers can be *compared*. On 2026-08-01 the Claude
+  parser stopped billing one API request once per content block; the file format
+  did not change, so every daily already published stayed schema-valid and kept
+  summing into the fleet total while meaning something different. Each daily now
+  carries a `counter` — a digest of the AST of the functions that decide what
+  gets counted, so it moves when a dedup key changes and *doesn't* move when a
+  comment does, and nobody has to remember to bump it. When the published files
+  disagree, `--fleet` prints per-cohort totals and refuses to print one FLEET
+  line, and `--export` tells the machine which of its own days to re-export.
+  Unstamped files are never "current": that is the absence of a version, not a
+  version, and a corpus of nothing but unstamped files is the most wrong a fleet
+  total can be.
 - **overlap** — if two machines read the same synced log directory, both report
   the same calls and a plain sum silently doubles them. Every machine-day
   carries a 64-wide bottom-k MinHash sketch of its call fingerprints; the

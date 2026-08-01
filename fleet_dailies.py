@@ -21,6 +21,7 @@ Design rules, inherited from the fleet usage ledger:
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import math
@@ -36,6 +37,37 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 SCHEMA_VERSION = 2
 
+# --- counting semantics ---------------------------------------------------
+#
+# `schema` describes the SHAPE of a daily file. It says nothing about what the
+# numbers inside it MEAN, and that is the version that actually breaks a fleet
+# total.
+#
+# Proven on 2026-08-01: parse_claude() deduped usage records by `uuid`, but
+# Claude Code writes one row per content block and repeats the same usage object
+# under a fresh uuid each time — so one API request was billed once per block it
+# produced. Measured 554M cache-read tokens where the truth was 287M. Fixing it
+# did not change the file format at all, so every daily already published stayed
+# schema-2-valid, kept summing into the fleet total, and nothing anywhere could
+# tell that those numbers were no longer comparable to new ones.
+#
+# A hand-maintained version constant would not have helped: it only moves when
+# someone remembers to move it, and the person who forgets is the person who
+# just changed the counting. So the version is DERIVED from the code that does
+# the counting.
+
+#: The functions whose behaviour decides what ends up in a token total. A change
+#: to any of them makes new numbers incomparable to old ones.
+COUNTING_SURFACE = (
+    "usage_of",
+    "parse_ts",
+    "parse_claude",
+    "parse_antigravity",
+    "parse_codex",
+    "parse_gemini_cli",
+    "parse_fleet_usage",
+)
+
 # Bottom-k MinHash width. 64 gives a Jaccard standard error of ~1/sqrt(64) =
 # 12.5%, which cleanly separates "independent machines" (~0) from "same logs
 # read twice" (~1) while costing ~0.5 KB per machine-day.
@@ -48,6 +80,12 @@ OUTLIER_Z = 3.5
 
 REPO_ROOT = Path(__file__).resolve().parent
 DAILIES_DIR = REPO_ROOT / "dailies"
+TRACKER_SOURCE = REPO_ROOT / "token_tracker.py"
+
+#: What an unstamped daily reports as. Files written before counter stamping
+#: existed are, by definition, from an unknown counting version — including the
+#: ones written by the parser that double-counted.
+UNSTAMPED = "unstamped"
 
 # The token fields every record carries. Kept explicit rather than derived so a
 # new field in token_tracker.py cannot silently change the on-disk schema.
@@ -122,6 +160,61 @@ def unintroduced_machine_warning(
         "If this box already has a fleet name, export under it: "
         f"NOUGEN_MACHINE=<name>. Otherwise this becomes a new machine."
     )
+
+
+def _without_docstrings(node: ast.AST) -> ast.AST:
+    """Drop docstrings so prose edits do not read as a change in behaviour."""
+    for child in ast.walk(node):
+        if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef, ast.Module)):
+            continue
+        body = getattr(child, "body", None)
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            child.body = body[1:] or [ast.Pass()]
+    return node
+
+
+def counter_fingerprint(source: Optional[Path] = None) -> str:
+    """A short digest of the code that decides what counts as a token.
+
+    Hashed from the ABSTRACT SYNTAX TREE of the functions in COUNTING_SURFACE,
+    not their text. That distinction is what makes this usable: reformatting,
+    renaming a local, adding a comment or rewriting a docstring leaves the
+    digest alone, while changing a dedup key, a filter or a field moves it. A
+    fingerprint that churned on cosmetic edits would force pointless re-exports
+    and be switched off within a week.
+
+    Functions are hashed in name order, so moving one up the file is not a
+    change. A name that has disappeared is recorded as `<missing>` — deleting or
+    renaming a parser genuinely does change what gets counted.
+
+    Returns UNSTAMPED if the source cannot be read or parsed. Being unable to
+    identify the counting version is exactly the state an unstamped file is in,
+    and reporting it as a real version would be a lie in the safe-looking
+    direction.
+    """
+    path = source or TRACKER_SOURCE
+    try:
+        tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError):
+        return UNSTAMPED
+
+    found: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
+            found[node.name] = ast.dump(_without_docstrings(node), annotate_fields=False)
+
+    parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
+    digest = hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6)
+    return digest.hexdigest()
+
+
+def counter_of(record: Dict[str, Any]) -> str:
+    """The counting version a published daily was produced by."""
+    value = record.get("counter")
+    return str(value) if value else UNSTAMPED
 
 
 def _day_of(invocation: Dict[str, Any]) -> Optional[str]:
@@ -254,11 +347,15 @@ def export_days(
     today = today or date.today()
     root = (dailies_dir or DAILIES_DIR) / machine
     root.mkdir(parents=True, exist_ok=True)
+    counter = counter_fingerprint()
 
     written: List[Path] = []
     for day, bucket in sorted(rollup(invocations).items()):
         record = {
             "schema": SCHEMA_VERSION,
+            # Which counting code produced these numbers. `schema` says the file
+            # can be READ; this says the numbers can be COMPARED.
+            "counter": counter,
             "machine": machine,
             "date": day,
             # A day is only final once it is over. Anything else would let a
@@ -308,6 +405,78 @@ def load_fleet(dailies_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     return records
 
 
+def counter_cohorts(
+    winners: List[Tuple[Tuple[str, str], Dict[str, Any]]],
+    local: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Group published machine-days by the counting version that produced them.
+
+    The question this answers is NOT "do these match me?" — the aggregator is a
+    reader, and a box running an older tracker has no authority over a corpus of
+    published files. The question is "are these numbers comparable to EACH
+    OTHER?", because a single cohort is internally consistent no matter which
+    version it is, and a mixed corpus is wrong no matter which version is right.
+
+    The largest cohort is treated as current on the assumption that fixes
+    propagate: the machine-days that have NOT been re-exported are the minority,
+    and they are what needs republishing. Ties break toward the cohort with the
+    most recent `generated_at`, since the newer counting is the one that just
+    changed.
+    """
+    local = local if local is not None else counter_fingerprint()
+    cohorts: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
+    newest: Dict[str, str] = {}
+    for (machine, day), record in winners:
+        counter = counter_of(record)
+        cohorts[counter].append((machine, day))
+        stamp = str(record.get("generated_at") or "")
+        if stamp > newest.get(counter, ""):
+            newest[counter] = stamp
+
+    # UNSTAMPED can never be current, even when it is the ONLY cohort and the
+    # corpus therefore looks internally consistent. It is not a version, it is
+    # the absence of one — and on this repo it means precisely "written before
+    # stamping existed", which is the same window as the parser that billed one
+    # request once per content block. A corpus of nothing but unstamped files is
+    # the most wrong a fleet total can be, and the one that would slip through a
+    # plain majority rule.
+    ranked = sorted(
+        ((counter, entries) for counter, entries in cohorts.items()
+         if counter != UNSTAMPED),
+        key=lambda kv: (len(kv[1]), newest.get(kv[0], "")),
+        reverse=True,
+    )
+    current = ranked[0][0] if ranked else local
+    stale = sorted(
+        (machine, day, counter)
+        for counter, entries in cohorts.items() if counter != current
+        for machine, day in entries
+    )
+    return {
+        "local": local,
+        "current": current,
+        # "mixed" means the corpus cannot be summed as it stands. More than one
+        # cohort does it; so does a single unstamped one, because those numbers
+        # are not comparable to anything this code would produce today.
+        "mixed": len(cohorts) > 1 or (len(cohorts) == 1 and UNSTAMPED in cohorts),
+        "cohorts": {counter: sorted(entries) for counter, entries in cohorts.items()},
+        "stale": stale,
+        # A box whose own counting differs from the corpus is not wrong yet — it
+        # becomes a second cohort the moment it publishes.
+        "local_is_current": (not ranked) or local == current,
+    }
+
+
+def stale_range(stale: List[Tuple[str, str, str]], machine: str) -> Optional[Tuple[str, str]]:
+    """First and last date this machine needs to re-export. None if clean.
+
+    Returned so the tool can print the exact command instead of "some of your
+    dailies are stale, figure out which".
+    """
+    days = sorted(day for m, day, _ in stale if m == machine)
+    return (days[0], days[-1]) if days else None
+
+
 def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     """Fold published dailies into fleet totals, per machine and per day."""
     by_machine: Dict[str, Dict[str, int]] = {}
@@ -328,8 +497,12 @@ def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         if incumbent is None or stamp > str(incumbent.get("generated_at") or ""):
             winners[key] = record
 
+    by_counter: Dict[str, Dict[str, int]] = {}
     for (machine, day), record in winners.items():
         totals = {f: int(record.get("totals", {}).get(f) or 0) for f in TOKEN_FIELDS}
+        slot = by_counter.setdefault(counter_of(record), {f: 0 for f in TOKEN_FIELDS})
+        for field in TOKEN_FIELDS:
+            slot[field] += totals[field]
         for target, name in ((by_machine, machine), (by_day, day)):
             slot = target.setdefault(name, {f: 0 for f in TOKEN_FIELDS})
             for field in TOKEN_FIELDS:
@@ -355,6 +528,8 @@ def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         "estimated": estimated_totals,
         "confidence": _confidence(exact_totals, estimated_totals),
         "overlaps": detect_overlaps(winner_list),
+        "counters": counter_cohorts(winner_list),
+        "by_counter": by_counter,
         "anomalies": detect_anomalies(by_day),
         "partial": sorted(partial),
         "machine_count": len(by_machine),
