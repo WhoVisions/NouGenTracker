@@ -453,7 +453,48 @@ def price_for(model_name, when=None):
     dated = _scheduled_price(key, when)
     if dated is not None:
         return dated
-    return MODEL_PRICING.get(key, DEFAULT_PRICING)
+    exact = MODEL_PRICING.get(key)
+    if exact is not None:
+        return exact
+    return _family_price(key)
+
+
+#: Suffixes a provider appends to a model id without changing the model being
+#: billed — reasoning effort, routing hints. `gemini-3.5-flash-high` is
+#: `gemini-3.5-flash` at a different effort, not a different price list.
+_VARIANT_SUFFIXES = tuple(
+    s.strip().lower() for s in os.environ.get(
+        "MODEL_VARIANT_SUFFIXES",
+        "high,medium,low,minimal,thinking,latest,preview,customtools").split(",")
+    if s.strip())
+
+
+def _family_price(key):
+    """Price an unlisted variant from its FAMILY rather than the generic default.
+
+    A table of exact ids goes stale the moment a provider ships a variant, and
+    the failure is silent and cheap-looking: an unlisted id lands on
+    DEFAULT_PRICING, which is lower than every current Gemini rate, so the
+    report under-bills exactly the newest models. `gemini-3.6-flash-high` — the
+    latest stable family — priced at the 1.0/4.0 default against 3.5's
+    documented 1.5/9.0.
+
+    So: strip one trailing segment at a time and re-look-up, but ONLY while the
+    dropped segment is a known variant suffix. That keeps `gemini-3.6-flash-high`
+    resolving to `gemini-3.6-flash` while refusing to let `gemini-3.6-flash`
+    collapse into some unrelated `gemini-3.6`.
+
+    The returned source tag is marked inferred, never `doc`. A rate nobody
+    published should not claim to be documented.
+    """
+    parts = key.split("-")
+    while len(parts) > 1 and parts[-1].lower() in _VARIANT_SUFFIXES:
+        parts = parts[:-1]
+        found = MODEL_PRICING.get("-".join(parts))
+        if found is not None:
+            inp, out, cache, _source = found
+            return (inp, out, cache, EST)
+    return DEFAULT_PRICING
 
 
 def model_bill(model_name, d, when=None):
