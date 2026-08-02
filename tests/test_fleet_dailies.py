@@ -8,6 +8,8 @@ whole report down.
 """
 import importlib.util
 import json
+
+import pytest
 import pathlib
 from datetime import date, datetime
 
@@ -296,3 +298,162 @@ def test_anomaly_reports_real_tokens_not_the_log():
     found = fd.detect_anomalies(days)
     assert found[0]["tokens"] == 5, "must report the count, not log10 of it"
     assert found[0]["ratio"] < 0.001
+
+
+# --- spend: dollars as a view over tokens ---------------------------------
+
+def _priced(model, bucket):
+    """Stand-in for token_tracker.model_bill — $1/M in, $10/M out, $0.1/M cache."""
+    cost = (bucket.get("input_tokens", 0) * 1.0
+            + bucket.get("output_tokens", 0) * 10.0
+            + bucket.get("cache_read_input_tokens", 0) * 0.1) / 1_000_000
+    return cost, "test"
+
+
+def test_spend_uses_the_billing_field_names_not_the_record_ones():
+    """The trap: invocations say `cache_read`, model_bill wants
+    `cache_read_input_tokens`. Passing the wrong shape prices cache at zero —
+    and cache is 95% of this fleet's volume, so the bill looks plausible."""
+    models = {"m": {"input_tokens": 0, "output_tokens": 0, "cache_read": 10_000_000,
+                    "cache_creation": 0, "reasoning": 0}}
+    assert fd.spend_of(models, _priced)["m"] == pytest.approx(1.0)
+
+
+def test_no_price_function_means_no_spend_not_zero_spend():
+    """Absent pricing must be distinguishable from genuinely free usage."""
+    models = {"m": {"input_tokens": 1_000_000}}
+    assert fd.spend_of(models, None) == {}
+
+
+def test_spend_is_not_stored_in_the_daily_record(tmp_path):
+    """Tokens are the measurement; dollars are a view. A frozen cost would bake
+    each machine's pricing bugs into the fleet total permanently."""
+    fd.export_days([_inv("2026-07-30", model="m", input_tokens=1000)],
+                   machine="boxa", today=date(2026, 12, 31), dailies_dir=tmp_path)
+    record = json.loads((tmp_path / "boxa" / "2026-07-30.json").read_text())
+    assert not any("cost" in k or "spend" in k or "usd" in k for k in record)
+
+
+def test_a_price_correction_applies_retroactively(tmp_path):
+    """One table fix must re-price every machine, including old days."""
+    fd.export_days([_inv("2026-07-30", model="m", output_tokens=1_000_000)],
+                   machine="boxa", today=date(2026, 12, 31), dailies_dir=tmp_path)
+    records = fd.load_fleet(tmp_path)
+
+    cheap = fd.aggregate(records, price_fn=lambda m, b: (b["output_tokens"] * 1.0 / 1e6, "x"))
+    dear = fd.aggregate(records, price_fn=lambda m, b: (b["output_tokens"] * 5.0 / 1e6, "x"))
+    assert cheap["spend"]["total"] == pytest.approx(1.0)
+    assert dear["spend"]["total"] == pytest.approx(5.0)
+    assert cheap["totals"] == dear["totals"], "tokens must not move when prices do"
+
+
+def test_spend_splits_by_machine_and_model(tmp_path):
+    for box, model, out in (("boxa", "opus", 1_000_000), ("boxb", "haiku", 2_000_000)):
+        fd.export_days([_inv("2026-07-30", model=model, output_tokens=out)],
+                       machine=box, today=date(2026, 12, 31), dailies_dir=tmp_path)
+    spend = fd.aggregate(fd.load_fleet(tmp_path), price_fn=_priced)["spend"]
+
+    assert spend["by_machine"]["boxa"] == pytest.approx(10.0)
+    assert spend["by_machine"]["boxb"] == pytest.approx(20.0)
+    assert spend["by_model"]["haiku"] == pytest.approx(20.0)
+    assert spend["total"] == pytest.approx(30.0)
+
+
+def test_an_unpriceable_model_does_not_take_the_report_down(tmp_path):
+    def explodes(model, bucket):
+        if model == "bad":
+            raise ValueError("no price for this")
+        return 1.0, "x"
+
+    models = {"bad": {"input_tokens": 1}, "good": {"input_tokens": 1}}
+    assert fd.spend_of(models, explodes) == {"good": 1.0}
+
+
+def test_token_totals_are_unchanged_when_no_prices_are_supplied(tmp_path):
+    fd.export_days([_inv("2026-07-30", model="m", input_tokens=500)],
+                   machine="boxa", today=date(2026, 12, 31), dailies_dir=tmp_path)
+    agg = fd.aggregate(fd.load_fleet(tmp_path))
+    assert agg["totals"]["input_tokens"] == 500
+    assert agg["spend"]["priced"] is False
+
+
+# --- dirty-tree counters --------------------------------------------------
+
+def test_a_clean_tree_stamps_a_plain_counter(monkeypatch):
+    """Asserted against the function's own branch rather than the ambient repo.
+
+    The first version of this read the real working tree, so it passed in CI
+    (fresh checkout) and failed on every developer machine mid-edit — including
+    the edit that introduced it. A test that only holds when nobody is working
+    is not testing the code.
+    """
+    monkeypatch.setattr(fd, "_tracker_differs_from_head", lambda path: False)
+    assert not fd.counter_fingerprint().endswith(fd.DIRTY_SUFFIX)
+
+
+def test_the_real_tree_agrees_with_its_own_git_state():
+    """The end-to-end version, skipped rather than failed while editing."""
+    dirty = fd._tracker_differs_from_head(fd.TRACKER_SOURCE)
+    counter = fd.counter_fingerprint()
+    assert counter.endswith(fd.DIRTY_SUFFIX) == dirty
+
+
+def test_an_uncommitted_tracker_edit_is_marked_dirty(tmp_path, monkeypatch):
+    """The regression, with the attribution corrected 2026-08-01.
+
+    It was phoebus's 17 dailies that carry an unreproducible stamp
+    (22555db5d239), not whoart's 15. Measured after the fact: 71aef8ff08fa is
+    reproduced by five commits — main, 01f5d76, dce1f97, d3a422b and this
+    branch's own token_tracker.py — under BOTH implementations of the
+    fingerprint, while no commit in the repository produces 22555db5d239.
+
+    The diagnosis was right and this test is worth keeping; only the box was
+    wrong. It was reached by taking one machine's value as the reference and
+    concluding the other was fabricated, which is the same shape of error as
+    reading your own push as another machine's work.
+    """
+    tracker = fd.TRACKER_SOURCE
+    original = tracker.read_text(encoding="utf-8")
+    try:
+        # Change a counting function's behaviour, do not commit it.
+        edited = original.replace("def usage_of(rec):", "def usage_of(rec):\n    _ = 1", 1)
+        assert edited != original, "anchor for the edit was not found"
+        tracker.write_text(edited, encoding="utf-8")
+
+        counter = fd.counter_fingerprint()
+        assert counter.endswith(fd.DIRTY_SUFFIX), (
+            "a counter computed from uncommitted code must never look reproducible"
+        )
+    finally:
+        tracker.write_text(original, encoding="utf-8")
+
+
+def test_two_exports_from_the_same_dirty_tree_still_match(tmp_path):
+    """Dirty must stay comparable to itself — the marker records provenance,
+    it does not make every run unique."""
+    tracker = fd.TRACKER_SOURCE
+    original = tracker.read_text(encoding="utf-8")
+    try:
+        tracker.write_text(
+            original.replace("def usage_of(rec):", "def usage_of(rec):\n    _ = 2", 1),
+            encoding="utf-8",
+        )
+        assert fd.counter_fingerprint() == fd.counter_fingerprint()
+    finally:
+        tracker.write_text(original, encoding="utf-8")
+
+
+def test_unknowable_provenance_is_not_reported_as_dirty(tmp_path):
+    """Outside a work tree there is no HEAD to compare against. That is the
+    same answer a clean checkout gives, and it is the right default for the
+    many places this runs with no repository at all."""
+    stray = tmp_path / "token_tracker.py"
+    stray.write_text("def usage_of(rec):\n    return {}\n", encoding="utf-8")
+    assert not fd.counter_fingerprint(stray).endswith(fd.DIRTY_SUFFIX)
+
+
+def test_a_dirty_counter_does_not_collide_with_its_clean_form():
+    """The marked and unmarked forms must be distinguishable as strings, so an
+    aggregator grouping by counter never merges them."""
+    clean = fd.counter_fingerprint()
+    assert clean + fd.DIRTY_SUFFIX != clean

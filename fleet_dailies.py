@@ -35,7 +35,19 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# Field names differ between an invocation record and the billing function:
+# invocations carry `cache_read`, model_bill() expects `cache_read_input_tokens`.
+# Passing the wrong shape doesn't error — the missing keys read 0 and the cache
+# tokens, which are 95% of this fleet's volume, silently bill as free.
+_BILL_KEYS = {
+    "input_tokens": "input_tokens",
+    "output_tokens": "output_tokens",
+    "cache_creation": "cache_creation_input_tokens",
+    "cache_read": "cache_read_input_tokens",
+    "reasoning": "reasoning_tokens",
+}
 
 # --- counting semantics ---------------------------------------------------
 #
@@ -86,6 +98,27 @@ TRACKER_SOURCE = REPO_ROOT / "token_tracker.py"
 #: existed are, by definition, from an unknown counting version — including the
 #: ones written by the parser that double-counted.
 UNSTAMPED = "unstamped"
+
+#: Suffix for a counter computed from a working tree that does not match HEAD.
+#: A fingerprint's whole job is to name a counting version someone can later
+#: look up, and a value computed from code that was never committed cannot be
+#: looked up — it is worse than an absent one, because it still reads as
+#: authoritative.
+#:
+#: Marking beats both alternatives. Silently stamping a dirty tree produces an
+#: unreproducible id that looks authoritative; refusing to export blocks the
+#: ordinary case of testing a parser change before committing it. A marked
+#: counter stays comparable to itself — two exports from the same dirty tree
+#: still match — while never being mistaken for a version anyone can check out.
+#:
+#: HISTORICAL NOTE, because the comment here used to assert the opposite: this
+#: marker was introduced on the theory that whoart's 71aef8ff08fa came from an
+#: uncommitted tree, since no commit reproduced it on phoebus. That was wrong.
+#: The two boxes ran different Pythons and the digest was interpreter-sensitive
+#: (see _canonical). whoart's tree was clean; so was phoebus's. The mechanism is
+#: still right and still earns its place — but the case it catches is rare, not
+#: the routine explanation for a counter mismatch. Suspect the interpreter first.
+DIRTY_SUFFIX = "+dirty"
 
 # The token fields every record carries. Kept explicit rather than derived so a
 # new field in token_tracker.py cannot silently change the on-disk schema.
@@ -176,6 +209,126 @@ def _without_docstrings(node: ast.AST) -> ast.AST:
     return node
 
 
+#: AST fields CPython has added to existing node types. They carry no counting
+#: semantics, and including them makes the digest a function of the interpreter
+#: rather than of the code — 3.12 added type_params to FunctionDef, which was
+#: enough to give every Python version its own fingerprint for identical source.
+#: Extend this when a release adds another; the cross-interpreter test in
+#: tests/test_counter_portability.py fails loudly when one appears.
+_VOLATILE_AST_FIELDS = frozenset({"type_params", "type_comment"})
+
+
+def _canonical(node: ast.AST) -> str:
+    """A serialisation of an AST that means the same thing on every CPython.
+
+    Neither stdlib option survives contact with a mixed-version fleet.
+    ast.dump() writes out whatever fields the running interpreter defines, so a
+    new field in a point release moves the digest for source that has not
+    changed. ast.unparse() renders back to source and dodges that, but its
+    formatting is not frozen either — 3.10 emits different text than 3.11 for
+    the same tree, which CI caught after 3.11 and 3.13 had agreed locally and
+    looked like proof.
+
+    So the traversal is ours: node type name, then each field in _fields order
+    minus the volatile ones. That stays insensitive to formatting, comments and
+    docstrings — the property that made hashing the AST right to begin with —
+    while depending only on grammar this code names explicitly.
+    """
+    if isinstance(node, ast.AST):
+        parts = [type(node).__name__]
+        for field in node._fields:
+            if field in _VOLATILE_AST_FIELDS:
+                continue
+            parts.append(f"{field}={_canonical(getattr(node, field, None))}")
+        return "(" + ",".join(parts) + ")"
+    if isinstance(node, list):
+        return "[" + ",".join(_canonical(item) for item in node) + "]"
+    return repr(node)
+
+
+def _ast_digest(source: str) -> Optional[str]:
+    """Hash the counting surface out of a tracker source. None if unparseable.
+
+    The pure half of the fingerprint: no git, no filesystem, so it can be run
+    over the working copy and over a committed blob and the two compared.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    found: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
+            found[node.name] = _canonical(_without_docstrings(node))
+    parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
+    return hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6).hexdigest()
+
+
+def _committed_source(path: Path, ref: str = "HEAD") -> Optional[str]:
+    """The tracker as committed at `ref`, or None if that cannot be established."""
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+    except (ValueError, OSError):
+        return None
+    code, committed = _git("show", f"{ref}:{rel.as_posix()}")
+    return committed if code == 0 and committed else None
+
+
+def _tracker_differs_from_head(path: Path) -> bool:
+    """Whether the COUNTING code on disk differs from the committed counting code.
+
+    Answers "can someone else reproduce this fingerprint?" — the only question a
+    counting version is asked. Two checks, in order, and both are needed.
+
+    First, ask git whether the BYTES match. `hash-object` applies the same
+    filters git used writing the blob, so line endings and .gitattributes settle
+    themselves, and nothing is decoded — which matters because the decoded-text
+    comparison this replaces was wrong on every Windows box and silent about it:
+    `read_text(errors="replace")` turned every em dash into U+FFFD while
+    `git show` returned it correctly, so the two could never be equal and a
+    clean tree stamped `+dirty` forever. `errors="replace"` cannot raise, so the
+    only symptom was a suffix nobody questioned.
+
+    Identical bytes settle it. DIFFERENT bytes do not, and that is the second
+    check. The fingerprint is deliberately AST-scoped to COUNTING_SURFACE so
+    comments and formatting cannot churn it — so an edit to a print statement or
+    a new CLI flag leaves the counting code byte-identical to HEAD and the
+    fingerprint perfectly reproducible. Reporting that as dirty is a false
+    positive that fires during ordinary work, quarantines exports that were
+    fine, and trains people to ignore the marker: exactly the reasoning that
+    made the fingerprint AST-based in the first place. So on a byte mismatch,
+    compare what is actually hashed.
+
+    Unknowable is not dirty. Outside a work tree, without git, or on a file git
+    does not track, this returns False — the same answer a clean checkout
+    gives, which is the right default for the many places this runs with no
+    repository at all.
+    """
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+    except (ValueError, OSError):
+        return False
+
+    code, head_blob = _git("rev-parse", f"HEAD:{rel.as_posix()}")
+    if code != 0:
+        return False
+    code, disk_blob = _git("hash-object", "--", str(path))
+    if code == 0 and head_blob.strip() == disk_blob.strip():
+        return False
+
+    committed = _committed_source(path)
+    if committed is None:
+        return False
+    try:
+        current = _ast_digest(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+    committed_digest = _ast_digest(committed)
+    if current is None or committed_digest is None:
+        return False
+    return current != committed_digest
+
+
 def counter_fingerprint(source: Optional[Path] = None) -> str:
     """A short digest of the code that decides what counts as a token.
 
@@ -195,20 +348,14 @@ def counter_fingerprint(source: Optional[Path] = None) -> str:
     and reporting it as a real version would be a lie in the safe-looking
     direction.
     """
-    path = source or TRACKER_SOURCE
+    path = Path(source or TRACKER_SOURCE)
     try:
-        tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError, ValueError):
+        digest = _ast_digest(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
         return UNSTAMPED
-
-    found: Dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COUNTING_SURFACE:
-            found[node.name] = ast.dump(_without_docstrings(node), annotate_fields=False)
-
-    parts = [f"{name}:{found.get(name, '<missing>')}" for name in sorted(COUNTING_SURFACE)]
-    digest = hashlib.blake2b("\x1e".join(parts).encode("utf-8"), digest_size=6)
-    return digest.hexdigest()
+    if digest is None:
+        return UNSTAMPED
+    return digest + (DIRTY_SUFFIX if _tracker_differs_from_head(path) else "")
 
 
 def counter_of(record: Dict[str, Any]) -> str:
@@ -405,9 +552,23 @@ def load_fleet(dailies_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     return records
 
 
+def committed_counter(ref: str = "HEAD") -> str:
+    """The fingerprint of the tracker AS COMMITTED — one a reader can retrieve.
+
+    The point of a counting version is that someone holding a number can go and
+    read the code that produced it. That makes "reproducible from a commit" a
+    property worth knowing about a cohort, not a detail.
+    """
+    source = _committed_source(TRACKER_SOURCE, ref)
+    if source is None:
+        return UNSTAMPED
+    return _ast_digest(source) or UNSTAMPED
+
+
 def counter_cohorts(
     winners: List[Tuple[Tuple[str, str], Dict[str, Any]]],
     local: Optional[str] = None,
+    reproducible: Optional[set] = None,
 ) -> Dict[str, Any]:
     """Group published machine-days by the counting version that produced them.
 
@@ -440,10 +601,34 @@ def counter_cohorts(
     # request once per content block. A corpus of nothing but unstamped files is
     # the most wrong a fleet total can be, and the one that would slip through a
     # plain majority rule.
+    # Neither can a counter nobody can look up. `+dirty` says outright that the
+    # code it names was never committed; a plain digest that no commit in this
+    # repo reproduces says the same thing without admitting it. Both fail the
+    # only question a counting version exists to answer — "go read the code that
+    # produced this number" — so neither may be declared current, however many
+    # files carry it.
+    #
+    # This is not hypothetical. On 2026-08-01 seventeen files stamped
+    # 22555db5d239 outvoted fifteen stamped 71aef8ff08fa, and 71aef8ff08fa was
+    # the one five commits reproduce. Ranking by headcount handed "current" to
+    # the cohort that could not be verified and marked the verifiable one stale.
+    if reproducible is None:
+        reproducible = {committed_counter()}
+    reproducible = {c for c in reproducible if c and c != UNSTAMPED}
+
+    def _eligible(counter: str) -> bool:
+        return counter != UNSTAMPED and not counter.endswith(DIRTY_SUFFIX)
+
+    def _rank(item):
+        counter, entries = item
+        # Reproducibility outranks headcount. A majority of unverifiable files
+        # is still unverifiable.
+        return (counter in reproducible, len(entries), newest.get(counter, ""))
+
     ranked = sorted(
         ((counter, entries) for counter, entries in cohorts.items()
-         if counter != UNSTAMPED),
-        key=lambda kv: (len(kv[1]), newest.get(kv[0], "")),
+         if _eligible(counter)),
+        key=_rank,
         reverse=True,
     )
     current = ranked[0][0] if ranked else local
@@ -461,6 +646,12 @@ def counter_cohorts(
         "mixed": len(cohorts) > 1 or (len(cohorts) == 1 and UNSTAMPED in cohorts),
         "cohorts": {counter: sorted(entries) for counter, entries in cohorts.items()},
         "stale": stale,
+        # Which cohorts a reader can actually go and verify. Named so the report
+        # can say WHY a cohort is stale — "nobody re-exported yet" and "this
+        # names code that was never committed" need different answers.
+        "reproducible": sorted(c for c in cohorts if c in reproducible),
+        "unverifiable": sorted(c for c in cohorts
+                               if c != UNSTAMPED and c not in reproducible),
         # A box whose own counting differs from the corpus is not wrong yet — it
         # becomes a second cohort the moment it publishes.
         "local_is_current": (not ranked) or local == current,
@@ -477,11 +668,20 @@ def stale_range(stale: List[Tuple[str, str, str]], machine: str) -> Optional[Tup
     return (days[0], days[-1]) if days else None
 
 
-def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
-    """Fold published dailies into fleet totals, per machine and per day."""
+def aggregate(
+    records: Iterable[Dict[str, Any]], price_fn: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Fold published dailies into fleet totals, per machine and per day.
+
+    Pass price_fn (token_tracker.model_bill) to also get spend. Without it
+    the token totals are unchanged — dollars are additive on top, never a
+    precondition, so a caller with no pricing table still gets volume.
+    """
     by_machine: Dict[str, Dict[str, int]] = {}
     by_day: Dict[str, Dict[str, int]] = {}
     by_source: Dict[str, Dict[str, int]] = {}
+    spend_machine: Dict[str, float] = {}
+    spend_model: Dict[str, float] = {}
     exact_totals: Dict[str, int] = {f: 0 for f in TOKEN_FIELDS}
     estimated_totals: Dict[str, int] = {f: 0 for f in TOKEN_FIELDS}
     partial: List[Tuple[str, str]] = []
@@ -511,6 +711,10 @@ def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
             slot = by_source.setdefault(source, {f: 0 for f in TOKEN_FIELDS})
             for field in TOKEN_FIELDS:
                 slot[field] += int(fields.get(field) or 0)
+        # Recomputed from this clone's price table, not read from the record.
+        for model, cost in spend_of(record.get("models") or {}, price_fn).items():
+            spend_model[model] = spend_model.get(model, 0.0) + cost
+            spend_machine[machine] = spend_machine.get(machine, 0.0) + cost
         for name, target in (("exact", exact_totals), ("estimated", estimated_totals)):
             fields = record.get(name) or {}
             for field in TOKEN_FIELDS:
@@ -521,6 +725,12 @@ def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     winner_list = list(winners.items())
     return {
         "machines": by_machine,
+        "spend": {
+            "by_machine": spend_machine,
+            "by_model": spend_model,
+            "total": sum(spend_machine.values()),
+            "priced": price_fn is not None,
+        },
         "days": by_day,
         "sources": by_source,
         "totals": totals_of(by_machine),
@@ -535,6 +745,41 @@ def aggregate(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         "machine_count": len(by_machine),
         "day_count": len(by_day),
     }
+
+
+def spend_of(
+    models: Dict[str, Dict[str, int]], price_fn: Optional[Any] = None
+) -> Dict[str, float]:
+    """Cost per model for one machine-day's token breakdown.
+
+    Cost is deliberately NOT stored in the daily records. Tokens are the
+    measurement; dollars are a view over them, and the two age differently:
+    prices get corrected (claude-opus-5 was billing at a fifth of its real rate
+    until the table was fixed), introductory rates expire, and a machine
+    running an older checkout has an older table. Freezing dollars at export
+    time would bake each machine's pricing bugs into the fleet total
+    permanently, and re-pricing history would mean rewriting every published
+    file. Recomputing from tokens at read time means one price correction fixes
+    every machine retroactively, including days exported months ago.
+
+    price_fn is injected rather than imported because token_tracker runs its
+    parsers at import; importing it here would make reading a JSON file cost a
+    six-second scan of every agent log on the box.
+    """
+    if price_fn is None:
+        return {}
+    out: Dict[str, float] = {}
+    for model, fields in models.items():
+        # Translate to the billing function's field names. Passing the
+        # invocation-record names silently prices cache tokens at zero, and
+        # cache is 95% of this fleet's volume.
+        bucket = {billed: int(fields.get(ours) or 0) for ours, billed in _BILL_KEYS.items()}
+        try:
+            cost, _source = price_fn(model, bucket)
+        except Exception:
+            continue
+        out[model] = out.get(model, 0.0) + float(cost)
+    return out
 
 
 def _confidence(exact: Dict[str, int], estimated: Dict[str, int]) -> float:
@@ -645,11 +890,26 @@ def _git(*args: str, cwd: Optional[Path] = None) -> Tuple[int, str]:
             ("git",) + args,
             cwd=str(cwd or REPO_ROOT),
             capture_output=True,
+            # `text=True` alone decodes with the console default — cp1252 on
+            # Windows — and this now runs `git show HEAD:token_tracker.py`,
+            # a UTF-8 file full of em dashes and ⚠. The decode raises inside
+            # subprocess's reader THREAD, so `run` returns normally with
+            # stdout=None and the caller dies on `None + str`. That took
+            # `--fleet` and `--export` down entirely on every Windows box,
+            # which is where the counting-version check needed to run most.
+            # Same fault and same fix as NouGenRelay's _git.
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except OSError as exc:
         return 1, str(exc)
-    return proc.returncode, (proc.stdout + proc.stderr).strip()
+    # And `subprocess.run` only guarantees str for these when it did the
+    # capturing itself. A caller that redirects a stream — and every test that
+    # fakes this call — gets None instead, so the coalesce is needed on top of
+    # the encoding fix, not instead of it. Both machines found this hour, from
+    # opposite ends: 21 faked-call test failures, and a live crash on Windows.
+    return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 
 def install_hooks(repo_root: Optional[Path] = None) -> Tuple[bool, str]:

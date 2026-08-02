@@ -87,7 +87,7 @@ showing up in the report. Config via `FLEET_PROXY_PORT`, `FLEET_OLLAMA_UPSTREAM`
 
 *Part of the NouGenAi / Who Visions fleet. Built for the Stadium.*
 
-## Fleet dailies — every machine's totals, summed
+## Fleet totals — every machine's usage and spend, summed
 
 `token_tracker.py` reads the logs on the box it runs on. That answer never
 leaves the machine, so the fleet-wide question had no answer. Dailies are the
@@ -95,25 +95,42 @@ transport: each machine exports its own days, git carries them, every machine
 sums them.
 
 ```bash
-python3 token_tracker.py --install-hooks         # once per clone (see below)
+python3 token_tracker.py --install-hooks          # once per clone (see below)
 NOUGEN_MACHINE=phoebus python3 token_tracker.py --publish
-git push -u origin dailies/phoebus               # then open a PR
+git push -u origin dailies/phoebus                # then open a PR
 
-python3 token_tracker.py --fleet                 # totals across every machine
+python3 token_tracker.py --fleet                  # totals across every machine
 ```
 
 Each machine writes only `dailies/<machine>/<YYYY-MM-DD>.json`, so two boxes
-pushing at once cannot conflict. Re-exporting a day replaces that day's file,
-so a re-run can never double-count.
+pushing at once cannot conflict. Re-exporting a day replaces that day's file, so
+a re-run can never double-count.
+
+To publish on a schedule, run `--publish` from cron or launchd on each box. It
+is deliberately not a GitHub Action: a runner has no access to the agent logs on
+your machines, so the export has to happen where the logs are.
+
+### Dollars are a view, not a record
+
+Daily files store **tokens only**. Spend is recomputed from those tokens at read
+time, using the price table in the clone doing the reading.
+
+This matters because prices and measurements age differently. `claude-opus-5`
+billed at a fifth of its real rate until the table was fixed; introductory rates
+expire; a machine on an older checkout has an older table. Freezing dollars into
+each daily file would bake every machine's pricing bugs into the fleet total
+permanently, and correcting a price would mean rewriting every published file.
+Recomputing means one table fix re-prices every machine retroactively, including
+days exported months ago.
 
 ### Machine identity
 
-Resolved the same way NouGenRelay resolves it — `NOUGEN_MACHINE`, else the
-hostname, lowercased and slugified — so one grep finds a box's commits, its
-handoffs and its dailies. **Set `NOUGEN_MACHINE` if the box already has a fleet
-name.** One machine under two names is counted twice, and the total is wrong in
-the direction that looks plausible; `--export` warns when it sees a name the
-fleet has never published under.
+Resolved the way NouGenRelay resolves it — `NOUGEN_MACHINE`, else the hostname,
+lowercased and slugified — so one grep finds a box's commits, its handoffs, and
+its dailies. **Set `NOUGEN_MACHINE` if the box already has a fleet name.** One
+machine under two names is counted twice, and the total is wrong in the
+direction that looks plausible; `--export` warns on a name the fleet has never
+published under.
 
 `--install-hooks` is per-clone because `core.hooksPath` lives in `.git/config`,
 which cannot be committed. Nothing depends on someone having run it: the tool
@@ -121,6 +138,21 @@ stamps its own commits with `Machine:`/`Agent:` trailers, and the hook only
 covers commits written by hand.
 
 ### What the numbers say about themselves
+
+- **confidence** — the share of the total that was *measured* rather than
+  inferred from text length. On this fleet only ~26% of reported tokens are
+  measured, which a plain total hides completely.
+- **overlap** — if two machines read the same synced log directory, both report
+  the same calls and a plain sum doubles them. Every machine-day carries a
+  64-wide bottom-k MinHash sketch of its call fingerprints; the aggregator
+  estimates Jaccard similarity and says so when it is high. ~0.5 KB per
+  machine-day regardless of call volume.
+- **outlier days** — modified z-score (median + MAD) rather than mean and
+  standard deviation, which one spike would drag until it hid itself. Computed
+  on log10 of the daily total: usage is multiplicative and spans three orders of
+  magnitude here, and on raw values MAD inflates until nothing clears the
+  threshold (max |z| = 1.81 across this fleet's 17 days — silence). In log space
+  the same series peaks at 5.23.
 
 - **confidence** — the share of the total that was *measured*. Some providers
   report usage; others are inferred from text length. These are tracked

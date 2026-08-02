@@ -25,8 +25,13 @@ def _ledger_path() -> str:
         return env
     vault = os.environ.get("SOL_VAULT_DIR")
     if not vault:
-        # services -> gui_api -> Sol-Ai -> Watchtower
-        vault = str(Path(__file__).resolve().parents[3] / "vault")
+        # REPO-relative, and it must stay that way: token_tracker.py defaults
+        # FLEET_USAGE_LEDGER to <repo>/vault/fleet_usage.jsonl, so anything
+        # else here writes rows the tracker never reads. This module arrived
+        # from Watchtower, where parents[3] (services -> gui_api -> Sol-Ai ->
+        # Watchtower) was the vault; in THIS repo parents[3] is C:\Users\super,
+        # which is nowhere. fleet -> NouGenTracker is parents[1].
+        vault = str(Path(__file__).resolve().parents[1] / "vault")
     return os.path.join(vault, "fleet_usage.jsonl")
 
 

@@ -505,7 +505,11 @@ def cols(d):
 
 # --- Parse Claude Code Logs ---
 def parse_claude():
-    files = glob.glob(os.path.join(PROJECTS, "**", "*.jsonl"), recursive=True)
+    # Sorted, because this parser dedupes by requestId across every file and
+    # the FIRST copy of a duplicated id is the one counted — and therefore the
+    # one whose timestamp decides which day it lands on. glob returns
+    # filesystem order, which differs between machines.
+    files = sorted(glob.glob(os.path.join(PROJECTS, "**", "*.jsonl"), recursive=True))
     by_day = defaultdict(lambda: defaultdict(int))
     by_model = defaultdict(lambda: defaultdict(int))
     totals = defaultdict(int)
@@ -786,8 +790,10 @@ def parse_antigravity():
     files = []
     for brain_dir in ANTIGRAVITY_BRAIN_DIRS:
         if os.path.exists(brain_dir):
+            # Same reason as parse_claude: this parser dedupes too.
             for root, dirs, filenames in os.walk(brain_dir):
-                for filename in filenames:
+                dirs.sort()
+                for filename in sorted(filenames):
                     if filename == "transcript.jsonl":
                         files.append(os.path.join(root, filename))
 
@@ -2572,7 +2578,9 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
             print("  push with: git push -u origin dailies/" + _machine)
 
     if FLEET:
-        _agg = _fd.aggregate(_fd.load_fleet())
+        # model_bill injected rather than imported, so fleet_dailies stays free
+        # of this module's import cost.
+        _agg = _fd.aggregate(_fd.load_fleet(), price_fn=model_bill)
         print()
         print("=" * 70)
         print(f"Fleet totals — {_agg['machine_count']} machine(s), {_agg['day_count']} day(s)")
