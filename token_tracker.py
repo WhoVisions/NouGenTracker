@@ -19,6 +19,30 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import datetime as _dtm
 
+
+def _force_utf8_stdio():
+    """Windows consoles default to cp1252, which cannot encode this report's glyphs.
+
+    The warning markers are the whole point of the lines they sit on — an
+    overlap or a mixed-counting block is the loudest thing this tool prints —
+    and on a cp1252 console `print("⚠ ...")` does not degrade, it raises
+    UnicodeEncodeError and kills the run mid-report. Reconfigure rather than
+    strip: `errors="replace"` keeps a legacy console readable.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_force_utf8_stdio()
+
 DAYS = 2
 MONTH = None
 BY_PROVIDER = False
@@ -26,6 +50,10 @@ RANGE_START = None
 RANGE_END = None
 COMPARE_N = None
 LANES = False
+EXPORT = False
+PUBLISH = False
+FLEET = False
+INSTALL_HOOKS = False
 
 # argparse CLI: preserves the legacy positional days arg and --month / --by-provider,
 # and adds dynamic ranges (--days/--weeks/--start/--end) + a --compare period diff.
@@ -72,6 +100,14 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
                          help="full analytics dashboard: 24h/WTD/MTD/QTD/HTD/YTD comparisons + records (highest day/week/month/streak)")
     _parser.add_argument("--by-provider", action="store_true",
                          help="group the Fleet usage ledger rows by provider")
+    _parser.add_argument("--export", action="store_true",
+                         help="write this machine's daily rollups to dailies/<machine>/")
+    _parser.add_argument("--publish", action="store_true",
+                         help="--export, then commit the dailies with Machine/Agent trailers")
+    _parser.add_argument("--fleet", action="store_true",
+                         help="totals across every machine that has published dailies")
+    _parser.add_argument("--install-hooks", action="store_true",
+                         help="point this clone at .githooks (per-clone; cannot be committed)")
     _a, _ = _parser.parse_known_args()
 
     MONTH = _a.month
@@ -80,6 +116,10 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
     RANGE_END = _a.end
     COMPARE_N = _a.compare
     LANES = _a.lanes
+    EXPORT = _a.export or _a.publish
+    PUBLISH = _a.publish
+    FLEET = _a.fleet
+    INSTALL_HOOKS = _a.install_hooks
 
     if _a.days is not None:
         DAYS = _a.days
@@ -93,6 +133,10 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
         DAYS = max(DAYS, COMPARE_N * 2)
     if LANES:
         DAYS = max(DAYS, 760)   # load full available history for the analytics dashboard
+    # An export publishes this machine's history, not just the window someone
+    # happened to ask for on the command line.
+    if EXPORT:
+        DAYS = max(DAYS, 760)
 
 PROJECTS = os.path.expanduser(os.path.join("~", ".claude", "projects"))
 
@@ -2476,3 +2520,134 @@ if __name__ == "__main__" and LANES:
     print("=" * 70)
     print_analytics_dashboard(ALL_INVOCATIONS, NOW)
 
+
+
+# --- Fleet dailies: publish this machine, sum every machine ----------------
+#
+# Everything above answers "what did this box spend?". These three flags carry
+# that answer to the other boxes over git, and fold theirs back in.
+
+if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
+    import fleet_dailies as _fd
+
+    if INSTALL_HOOKS:
+        _ok, _msg = _fd.install_hooks()
+        print(f"{'✓' if _ok else '✗'} {_msg}")
+
+    if EXPORT:
+        _paths = _fd.export_days(ALL_INVOCATIONS)
+        _machine = _fd.resolve_machine()
+        print()
+        print("=" * 70)
+        print(f"Exported {len(_paths)} day(s) for {_machine} -> dailies/{_machine}/")
+        print("=" * 70)
+        if _paths:
+            print(f"  {_paths[0].stem} .. {_paths[-1].stem}")
+        _warn = _fd.unintroduced_machine_warning(_machine)
+        if _warn:
+            print(f"  ⚠ {_warn}")
+        if not _fd.hooks_installed():
+            # Say it once, here, rather than letting a fresh clone discover it
+            # from unstamped commits weeks later.
+            print("  note: hooks not installed in this clone — run --install-hooks")
+
+        # This export used the current counting code. Any day this machine
+        # published under a different one is now incomparable to it, and only
+        # this machine can fix that — nobody else has its logs. So name the
+        # range and the command rather than leaving it to be noticed.
+        _cohorts = _fd.aggregate(_fd.load_fleet())["counters"]
+        _mine = _fd.stale_range(_cohorts["stale"], _machine)
+        if _mine:
+            _lo, _hi = _mine
+            print(f"  ⚠ {_lo}..{_hi} were exported by different counting code "
+                  f"and no longer agree with the days just written.")
+            print(f"    re-export them:  python token_tracker.py "
+                  f"--start {_lo} --end {_hi} --export")
+
+        if PUBLISH:
+            _ok, _msg = _fd.stamped_commit(
+                f"dailies({_machine}): publish {len(_paths)} day(s)", _paths
+            )
+            print(f"  {'✓' if _ok else '·'} {_msg}")
+            print("  push with: git push -u origin dailies/" + _machine)
+
+    if FLEET:
+        _agg = _fd.aggregate(_fd.load_fleet())
+        print()
+        print("=" * 70)
+        print(f"Fleet totals — {_agg['machine_count']} machine(s), {_agg['day_count']} day(s)")
+        print("=" * 70)
+        if not _agg["machines"]:
+            print("  no dailies published yet — run --export, then push")
+        else:
+            print(f"  {'machine':<28}{'input':>12}{'output':>12}{'cache read':>14}")
+            for _name, _t in sorted(_agg["machines"].items()):
+                print(f"  {_name:<28}{fmt(_t['input_tokens']):>12}"
+                      f"{fmt(_t['output_tokens']):>12}{fmt(_t['cache_read']):>14}")
+            _tot = _agg["totals"]
+            _cnt = _agg["counters"]
+            print("  " + "-" * 64)
+            if _cnt["mixed"]:
+                # These numbers were produced by different counting code, so
+                # adding them is arithmetic on incomparable units. Printing one
+                # FLEET line anyway would hide that behind a number that looks
+                # exactly like a correct one — the failure this whole mechanism
+                # exists to prevent. Split it instead.
+                for _c, _ct in sorted(_agg["by_counter"].items(),
+                                      key=lambda kv: kv[0] != _cnt["current"]):
+                    _tag = "current" if _c == _cnt["current"] else "STALE"
+                    _label = _c if _c == _fd.UNSTAMPED else _c[:8]
+                    print(f"  {'counter ' + _label + ' (' + _tag + ')':<28}"
+                          f"{fmt(_ct['input_tokens']):>12}"
+                          f"{fmt(_ct['output_tokens']):>12}{fmt(_ct['cache_read']):>14}")
+                print(f"  {'FLEET':<28}{'— not summed: see below':>38}")
+            else:
+                print(f"  {'FLEET':<28}{fmt(_tot['input_tokens']):>12}"
+                      f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}")
+            # How much of that total is measured rather than inferred. A number
+            # without this is not a number you can act on.
+            _conf = _agg["confidence"]
+            print(f"  {'confidence':<28}{_conf:>11.1%} measured"
+                  f"   ({fmt(sum(_agg['estimated'].values()))} estimated)")
+
+            if _agg["partial"]:
+                print()
+                print(f"  {len(_agg['partial'])} partial day(s) included "
+                      "(today is not over on those machines)")
+
+            # Double counting is the one error that inflates a fleet total while
+            # every individual file still looks correct — so it is loud.
+            if _agg["overlaps"]:
+                print()
+                print("  ⚠ OVERLAP — these machines appear to have counted the same calls:")
+                for _o in _agg["overlaps"][:5]:
+                    print(f"      {_o['date']}  {' + '.join(_o['machines'])}  "
+                          f"(Jaccard {_o['jaccard']})")
+                print("      totals above are inflated by the shared portion")
+
+            # Same class of failure as OVERLAP — the total looks right while
+            # every file in it looks right too — so it gets the same volume.
+            if _cnt["mixed"]:
+                print()
+                print("  ⚠ MIXED COUNTING — these machine-days were produced by "
+                      "code that counts differently:")
+                _by_machine_stale = defaultdict(list)
+                for _m, _d, _c in _cnt["stale"]:
+                    _by_machine_stale[_m].append(_d)
+                for _m, _days in sorted(_by_machine_stale.items()):
+                    print(f"      {_m:<16}{len(_days):>4} day(s)  "
+                          f"{min(_days)}..{max(_days)}")
+                print("      They cannot be added to the current cohort. Each box")
+                print("      re-exports its own:  python token_tracker.py "
+                      "--start <first> --end <last> --export")
+                if not _cnt["local_is_current"]:
+                    print(f"      NOTE: this box counts as {_cnt['local'][:8]}, and the "
+                          f"corpus is mostly {_cnt['current'][:8]} —")
+                    print("      publishing from here would add a third cohort. Pull first.")
+
+            if _agg["anomalies"]:
+                print()
+                print(f"  outlier days (modified z ≥ {_fd.OUTLIER_Z}, robust to the spike itself):")
+                for _an in _agg["anomalies"][:5]:
+                    print(f"      {_an['date']}  {fmt(_an['tokens']):>14}  "
+                          f"z={_an['z']:+.1f}  {_an['direction']}")
