@@ -7,7 +7,7 @@
 # two histories collide.
 #
 # Enable per clone (hooks are not themselves tracked into .git/hooks):
-#     git config core.hooksPath hooks
+#     git config core.hooksPath .githooks
 #
 # Identity resolves the same way core.resolve_agent() does, INCLUDING git
 # config. It did not, once: `relay init --agent` stored the lane in git config

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # dailies/ — what this publishes, and what it never will
 
 **This repository is public.** These files are usage telemetry from private
@@ -66,3 +67,9 @@ history, raise that setting *before* you need it:
 Measured on one machine 2026-08-01: a 45-day export returned 15 days, because
 only 14 days of transcripts still existed on disk. The rest had already been
 pruned.
+=======
+Published daily token rollups, one directory per machine.
+
+Written by `token_tracker.py --export`, read by `--fleet`. Machines only
+ever write their own directory; git merges the rest.
+>>>>>>> origin/main

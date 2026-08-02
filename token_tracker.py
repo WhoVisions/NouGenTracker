@@ -23,12 +23,11 @@ import datetime as _dtm
 def _force_utf8_stdio():
     """Windows consoles default to cp1252, which cannot encode this report's glyphs.
 
-    The warning markers are the whole point of the lines they sit on — MIXED
-    COUNTING and OVERLAP are the loudest things this tool prints — and on a
-    cp1252 console `print("⚠ ...")` does not degrade, it raises
-    UnicodeEncodeError and kills the run at exactly the moment it had something
-    serious to say. Reconfigure rather than strip: errors="replace" keeps a
-    legacy console readable.
+    The warning markers are the whole point of the lines they sit on — an
+    overlap or a mixed-counting block is the loudest thing this tool prints —
+    and on a cp1252 console `print("⚠ ...")` does not degrade, it raises
+    UnicodeEncodeError and kills the run mid-report. Reconfigure rather than
+    strip: `errors="replace"` keeps a legacy console readable.
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -99,16 +98,16 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
                          help="compare the last N days vs the prior N days, per company")
     _parser.add_argument("--lanes", action="store_true",
                          help="full analytics dashboard: 24h/WTD/MTD/QTD/HTD/YTD comparisons + records (highest day/week/month/streak)")
+    _parser.add_argument("--by-provider", action="store_true",
+                         help="group the Fleet usage ledger rows by provider")
     _parser.add_argument("--export", action="store_true",
                          help="write this machine's daily rollups to dailies/<machine>/")
     _parser.add_argument("--publish", action="store_true",
                          help="--export, then commit the dailies with Machine/Agent trailers")
     _parser.add_argument("--fleet", action="store_true",
-                         help="token and spend totals across every machine that has published")
+                         help="totals across every machine that has published dailies")
     _parser.add_argument("--install-hooks", action="store_true",
                          help="point this clone at .githooks (per-clone; cannot be committed)")
-    _parser.add_argument("--by-provider", action="store_true",
-                         help="group the Fleet usage ledger rows by provider")
     _a, _ = _parser.parse_known_args()
 
     MONTH = _a.month
@@ -132,10 +131,12 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
     # --compare widens the collection window so both periods are gathered (>= 2N days).
     if COMPARE_N is not None and COMPARE_N > 0:
         DAYS = max(DAYS, COMPARE_N * 2)
+    if LANES:
+        DAYS = max(DAYS, 760)   # load full available history for the analytics dashboard
     # An export publishes this machine's history, not just the window someone
     # happened to ask for on the command line.
-    if LANES or EXPORT:
-        DAYS = max(DAYS, 760)   # load full available history for the analytics dashboard
+    if EXPORT:
+        DAYS = max(DAYS, 760)
 
 PROJECTS = os.path.expanduser(os.path.join("~", ".claude", "projects"))
 
@@ -299,6 +300,20 @@ EST = "est"
 MODEL_PRICING = {
     # ---- Claude: first-party list prices ----
     "claude-fable-5":             (10.00, 50.00, 1.000, DOC),
+    "claude-mythos-5":            (10.00, 50.00, 1.000, DOC),
+    # Opus 4.1 is 3x the 4.5+ rate, not the same. Absent, it fell through to the
+    # $1/$4 default — a 15x undercount on any log old enough to contain it.
+    "claude-opus-4-1":            (15.00, 75.00, 1.500, DOC),
+    "claude-haiku-3-5":           (0.80, 4.00, 0.080, DOC),
+    # Opus 5 and Sonnet 5 were missing entirely, so 255M opus-5 tokens — the
+    # second-largest model on this fleet — were billing at the $1/$4 unknown-model
+    # default. Cache read is 0.1x base input on every Claude model.
+    "claude-opus-5":              (5.00, 25.00, 0.500, DOC),
+    "claude-opus-5-thinking":     (5.00, 25.00, 0.500, DOC),
+    # Sonnet 5 is dated — see PRICE_SCHEDULE. These are the post-intro rates and
+    # the fallback when a caller supplies no date.
+    "claude-sonnet-5":            (3.00, 15.00, 0.300, DOC),
+    "claude-sonnet-5-thinking":   (3.00, 15.00, 0.300, DOC),
     "claude-opus-4-8":            (5.00, 25.00, 0.500, DOC),
     "claude-opus-4-7":            (5.00, 25.00, 0.500, DOC),
     "claude-opus-4-6":            (5.00, 25.00, 0.500, DOC),
@@ -333,20 +348,20 @@ MODEL_PRICING = {
     # 3 Pro preview: no first-party row wired in yet -> estimate at pro tier.
     "gemini-3-pro-preview":       (2.00, 12.00, 0.20, EST),
     # 2.5 family: first-party list prices (<=200k tier).
-    "gemini-2.5-pro":             (1.25, 10.00, 0.31, DOC),
-    "gemini-2.5-flash":           (0.30, 2.50, 0.075, DOC),
+    "gemini-2.5-pro":             (1.25, 10.00, 0.125, DOC),
+    "gemini-2.5-flash":           (0.30, 2.50, 0.030, DOC),
     # 2.0 family: first-party list prices
     "gemini-2.0-flash":           (0.075, 0.30, 0.01875, DOC),
     "gemini-2.0-flash-lite":      (0.0375, 0.15, 0.009375, DOC),
     "gemini-2.0-pro":             (0.80, 3.20, 0.20, DOC),
     # Flash-lite tiers: estimate, no first-party row confirmed here.
-    "gemini-3.1-flash-lite":          (0.10, 0.40, 0.01, EST),
-    "gemini-3.1-flash-lite-preview":  (0.10, 0.40, 0.01, EST),
+    "gemini-3.1-flash-lite":          (0.25, 1.50, 0.025, DOC),
+    "gemini-3.1-flash-lite-preview":  (0.25, 1.50, 0.025, DOC),
     # ---- OpenAI: first-party list prices (cached input -> cache_read) ----
     "gpt-5.6-sol-ultra":          (5.00, 30.00, 0.50, DOC),
     "gpt-5.6-sol":                (5.00, 30.00, 0.50, DOC),
-    "gpt-5.6-terra":              (2.50, 15.00, 0.25, DOC),
-    "gpt-5.6-luna":               (1.00, 6.00, 0.10, DOC),
+    "gpt-5.6-terra":              (2.00, 12.00, 0.200, DOC),
+    "gpt-5.6-luna":               (0.20, 1.20, 0.020, DOC),
     "gpt-5.5":                    (5.00, 30.00, 0.50, DOC),
     "gpt-5.4":                    (2.50, 15.00, 0.25, DOC),
     "gpt-5.4-mini":               (0.75, 4.50, 0.075, DOC),
@@ -354,6 +369,20 @@ MODEL_PRICING = {
     "gpt-5.1-codex-mini":         (0.75, 4.50, 0.075, EST),
     # gpt-oss is open-weights; Dave runs it free via OpenRouter/local. Nominal host est.
     "gpt-oss-120b-medium":        (0.10, 0.40, 0.010, EST),
+    # --- audited against the official pricing pages, 2026-08-01 -------------
+    # Absent rows are not neutral: they fall through to DEFAULT_PRICING at
+    # $1/$4, so a missing premium model reads as an order of magnitude cheaper
+    # than it is. gpt-5.5-pro and gpt-5.4-pro at $30/$180 were a 30x undercount.
+    "gemini-3.6-flash":           (1.50, 7.50, 0.150, DOC),
+    "gemini-3.5-flash-lite":      (0.30, 2.50, 0.030, DOC),
+    "gemini-2.5-flash-lite":      (0.10, 0.40, 0.010, DOC),
+    "gemini-embedding-001":       (0.15, 0.00, 0.000, DOC),
+    "gpt-5.5-pro":                (30.00, 180.00, 0.000, DOC),
+    "gpt-5.4-pro":                (30.00, 180.00, 0.000, DOC),
+    "gpt-5.4-nano":               (0.20, 1.25, 0.020, DOC),
+    # The model Codex actually reports; absent, every Codex log billed at $1/$4.
+    "gpt-5.3-codex":              (1.75, 14.00, 0.175, DOC),
+    "chat-latest":                (5.00, 30.00, 0.500, DOC),
 }
 # Unknown model: conservative estimate so the bill never silently reads $0.
 DEFAULT_PRICING = (1.00, 4.00, 0.100, EST)
@@ -367,24 +396,74 @@ FREE_LOCAL_MODELS = {
 }
 
 
-def price_for(model_name):
+
+# --- dated pricing ---------------------------------------------------------
+#
+# A price is only true for a stretch of time, and this tool bills history: a day
+# in August and a day in September are charged at different rates for the same
+# model. A single number per model cannot express that, so it is wrong on one
+# side of the boundary no matter which value you pick.
+#
+# Sonnet 5 is the live case. Introductory pricing of $2/$10 runs through
+# 2026-08-31; $3/$15 applies from 2026-09-01. Billing August at list overstates
+# it by 50%, and billing September at intro understates it by a third.
+#
+# Entries are (first_day, last_day_inclusive, (input, output, cache_read, src)).
+# last_day of None means "still current".
+PRICE_SCHEDULE = {
+    "claude-sonnet-5": [
+        ("2000-01-01", "2026-08-31", (2.00, 10.00, 0.200, DOC)),
+        ("2026-09-01", None,         (3.00, 15.00, 0.300, DOC)),
+    ],
+}
+PRICE_SCHEDULE["claude-sonnet-5-thinking"] = PRICE_SCHEDULE["claude-sonnet-5"]
+
+
+def _scheduled_price(key, when):
+    """Dated price for a model, or None when the flat table should answer.
+
+    `when` is a YYYY-MM-DD string or a date/datetime. Without one there is no
+    way to choose, so the flat table wins — callers that do not care about
+    history keep the behaviour they had.
+    """
+    entries = PRICE_SCHEDULE.get(key)
+    if not entries or when is None:
+        return None
+    day = when.strftime("%Y-%m-%d") if hasattr(when, "strftime") else str(when)[:10]
+    if len(day) != 10:
+        return None
+    for start, end, price in entries:
+        if start <= day and (end is None or day <= end):
+            return price
+    return None
+
+
+def price_for(model_name, when=None):
     """Resolve (input, output, cache_read, source) for a model, ignoring the
-    ' (estimated)' suffix the Antigravity fallback parser appends."""
+    ' (estimated)' suffix the Antigravity fallback parser appends.
+
+    Pass `when` (the day the tokens were spent) to get the rate in force then.
+    Without it the flat table answers, which is the current rate for every model
+    that has never been repriced.
+    """
     key = (model_name or "").replace(" (estimated)", "").strip()
     # Free lanes: local Ollama/Gemma + OpenRouter ':free' routes.
     if key.endswith(":free") or key in FREE_LOCAL_MODELS:
         return (0.0, 0.0, 0.0, DOC)
+    dated = _scheduled_price(key, when)
+    if dated is not None:
+        return dated
     return MODEL_PRICING.get(key, DEFAULT_PRICING)
 
 
-def model_bill(model_name, d):
+def model_bill(model_name, d, when=None):
     """Honest API-equivalent cost (USD) for one model's token bucket.
 
     Cache-reads are billed at their discounted rate, cache-creation at 1.25x
     input, and reasoning at the output rate — the way a real invoice prices
     them. Returns (cost_usd, source_tag).
     """
-    inp, out, cache_read, src = price_for(model_name)
+    inp, out, cache_read, src = price_for(model_name, when)
     cost = (
         d.get("input_tokens", 0) * inp
         + d.get("cache_creation_input_tokens", 0) * inp * 1.25
@@ -426,16 +505,10 @@ def cols(d):
 
 # --- Parse Claude Code Logs ---
 def parse_claude():
-    # Sorted, because this parser dedupes by requestId across every file and the
-    # FIRST copy of a duplicated id is the one that gets counted — and therefore
-    # the one whose timestamp decides which day it lands on. glob returns
-    # filesystem order, which differs between machines and can change on the
-    # same machine when files are added. Unsorted, two boxes scanning identical
-    # logs could attribute the same request to different days and disagree on a
-    # fleet total with nothing to point at. Nothing duplicates today (824
-    # usage-bearing ids here, none in two files, none spanning two dates), so
-    # this changes no current number; it removes the way a future one could go
-    # wrong silently. parse_gemini_cli already sorts.
+    # Sorted, because this parser dedupes by requestId across every file and
+    # the FIRST copy of a duplicated id is the one counted — and therefore the
+    # one whose timestamp decides which day it lands on. glob returns
+    # filesystem order, which differs between machines.
     files = sorted(glob.glob(os.path.join(PROJECTS, "**", "*.jsonl"), recursive=True))
     by_day = defaultdict(lambda: defaultdict(int))
     by_model = defaultdict(lambda: defaultdict(int))
@@ -717,8 +790,7 @@ def parse_antigravity():
     files = []
     for brain_dir in ANTIGRAVITY_BRAIN_DIRS:
         if os.path.exists(brain_dir):
-            # Same reason as parse_claude: this parser dedupes too, so scan
-            # order decides attribution. os.walk yields directory order.
+            # Same reason as parse_claude: this parser dedupes too.
             for root, dirs, filenames in os.walk(brain_dir):
                 dirs.sort()
                 for filename in sorted(filenames):
@@ -2458,15 +2530,15 @@ if __name__ == "__main__" and LANES:
 
 # --- Fleet dailies: publish this machine, sum every machine ----------------
 #
-# Everything above answers "what did this box spend?". These flags carry that
-# answer to the other boxes over git, and fold theirs back in.
+# Everything above answers "what did this box spend?". These three flags carry
+# that answer to the other boxes over git, and fold theirs back in.
 
 if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
     import fleet_dailies as _fd
 
     if INSTALL_HOOKS:
         _ok, _msg = _fd.install_hooks()
-        print(f"{'OK ' if _ok else 'xx '}{_msg}")
+        print(f"{'✓' if _ok else '✗'} {_msg}")
 
     if EXPORT:
         _paths = _fd.export_days(ALL_INVOCATIONS)
@@ -2479,111 +2551,111 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
             print(f"  {_paths[0].stem} .. {_paths[-1].stem}")
         _warn = _fd.unintroduced_machine_warning(_machine)
         if _warn:
-            print(f"  ! {_warn}")
+            print(f"  ⚠ {_warn}")
         if not _fd.hooks_installed():
-            print("  note: hooks not installed in this clone - run --install-hooks")
+            # Say it once, here, rather than letting a fresh clone discover it
+            # from unstamped commits weeks later.
+            print("  note: hooks not installed in this clone — run --install-hooks")
+
+        # This export used the current counting code. Any day this machine
+        # published under a different one is now incomparable to it, and only
+        # this machine can fix that — nobody else has its logs. So name the
+        # range and the command rather than leaving it to be noticed.
+        _cohorts = _fd.aggregate(_fd.load_fleet())["counters"]
+        _mine = _fd.stale_range(_cohorts["stale"], _machine)
+        if _mine:
+            _lo, _hi = _mine
+            print(f"  ⚠ {_lo}..{_hi} were exported by different counting code "
+                  f"and no longer agree with the days just written.")
+            print(f"    re-export them:  python token_tracker.py "
+                  f"--start {_lo} --end {_hi} --export")
 
         if PUBLISH:
             _ok, _msg = _fd.stamped_commit(
                 f"dailies({_machine}): publish {len(_paths)} day(s)", _paths
             )
-            print(f"  {'OK ' if _ok else '.  '}{_msg}")
-            print(f"  push with: git push -u origin dailies/{_machine}")
+            print(f"  {'✓' if _ok else '·'} {_msg}")
+            print("  push with: git push -u origin dailies/" + _machine)
 
     if FLEET:
-        # model_bill is injected rather than imported by fleet_dailies, which
-        # keeps that module free of this one's six-second import cost.
+        # model_bill injected rather than imported, so fleet_dailies stays free
+        # of this module's import cost.
         _agg = _fd.aggregate(_fd.load_fleet(), price_fn=model_bill)
-        _spend = _agg["spend"]
         print()
         print("=" * 70)
-        print(f"Fleet totals - {_agg['machine_count']} machine(s), {_agg['day_count']} day(s)")
+        print(f"Fleet totals — {_agg['machine_count']} machine(s), {_agg['day_count']} day(s)")
         print("=" * 70)
         if not _agg["machines"]:
-            print("  no dailies published yet - run --export, then push")
+            print("  no dailies published yet — run --export, then push")
         else:
-            print(f"  {'machine':<26}{'input':>12}{'output':>12}{'cache read':>14}{'spend':>12}")
+            print(f"  {'machine':<28}{'input':>12}{'output':>12}{'cache read':>14}")
             for _name, _t in sorted(_agg["machines"].items()):
-                print(f"  {_name:<26}{fmt(_t['input_tokens']):>12}"
-                      f"{fmt(_t['output_tokens']):>12}{fmt(_t['cache_read']):>14}"
-                      f"{'$' + format(_spend['by_machine'].get(_name, 0.0), ',.2f'):>12}")
+                print(f"  {_name:<28}{fmt(_t['input_tokens']):>12}"
+                      f"{fmt(_t['output_tokens']):>12}{fmt(_t['cache_read']):>14}")
             _tot = _agg["totals"]
             _cnt = _agg["counters"]
-            print("  " + "-" * 74)
+            print("  " + "-" * 64)
             if _cnt["mixed"]:
-                # aggregate() has known these cohorts were incomparable since
-                # dce1f97; only the printing was lost. Adding them is arithmetic
-                # on different definitions of a token, and the result looks
-                # exactly like a correct total — which is the entire failure the
-                # counting version exists to prevent.
+                # These numbers were produced by different counting code, so
+                # adding them is arithmetic on incomparable units. Printing one
+                # FLEET line anyway would hide that behind a number that looks
+                # exactly like a correct one — the failure this whole mechanism
+                # exists to prevent. Split it instead.
                 for _c, _ct in sorted(_agg["by_counter"].items(),
                                       key=lambda kv: kv[0] != _cnt["current"]):
-                    _tag = ("current" if _c == _cnt["current"]
-                            else "UNVERIFIABLE" if _c in _cnt["unverifiable"]
-                            else "STALE")
-                    _label = _c if _c == _fd.UNSTAMPED else _c[:12]
-                    print(f"  {'counter ' + _label + ' (' + _tag + ')':<26}"
+                    _tag = "current" if _c == _cnt["current"] else "STALE"
+                    _label = _c if _c == _fd.UNSTAMPED else _c[:8]
+                    print(f"  {'counter ' + _label + ' (' + _tag + ')':<28}"
                           f"{fmt(_ct['input_tokens']):>12}"
                           f"{fmt(_ct['output_tokens']):>12}{fmt(_ct['cache_read']):>14}")
-                print(f"  {'FLEET':<26}{'— not summed: see below':>38}")
+                print(f"  {'FLEET':<28}{'— not summed: see below':>38}")
             else:
-                print(f"  {'FLEET':<26}{fmt(_tot['input_tokens']):>12}"
-                      f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}"
-                      f"{'$' + format(_spend['total'], ',.2f'):>12}")
-
-            if _spend["by_model"]:
-                print()
-                print("  spend by model (recomputed from tokens at this clone's prices):")
-                for _model, _cost in sorted(_spend["by_model"].items(),
-                                            key=lambda kv: -kv[1])[:6]:
-                    print(f"      {'$' + format(_cost, ',.2f'):>11}  {_model}")
-
+                print(f"  {'FLEET':<28}{fmt(_tot['input_tokens']):>12}"
+                      f"{fmt(_tot['output_tokens']):>12}{fmt(_tot['cache_read']):>14}")
+            # How much of that total is measured rather than inferred. A number
+            # without this is not a number you can act on.
             _conf = _agg["confidence"]
-            print()
-            print(f"  {'confidence':<26}{_conf:>11.1%} measured"
+            print(f"  {'confidence':<28}{_conf:>11.1%} measured"
                   f"   ({fmt(sum(_agg['estimated'].values()))} estimated)")
 
             if _agg["partial"]:
+                print()
                 print(f"  {len(_agg['partial'])} partial day(s) included "
                       "(today is not over on those machines)")
 
-            if _cnt["mixed"]:
-                print()
-                print("  ⚠ MIXED COUNTING — these machine-days were produced by "
-                      "code that counts differently:")
-                _stale_by_machine = defaultdict(list)
-                for _m, _d, _c in _cnt["stale"]:
-                    _stale_by_machine[(_m, _c)].append(_d)
-                for (_m, _c), _days in sorted(_stale_by_machine.items()):
-                    print(f"      {_m:<16}{len(_days):>4} day(s)  "
-                          f"{min(_days)}..{max(_days)}  counter {_c[:12]}")
-                # Two different diagnoses, two different instructions. Telling a
-                # box to "re-export" when its stamp names code that was never
-                # committed would have it publish the same unverifiable value.
-                if _cnt["unverifiable"]:
-                    print("      UNVERIFIABLE: no commit in this repo reproduces "
-                          f"{', '.join(c[:12] for c in _cnt['unverifiable'])}.")
-                    print("      That export ran against uncommitted edits. Commit or")
-                    print("      discard them FIRST, then re-export — otherwise the new")
-                    print("      files carry a counting version nobody can look up either.")
-                else:
-                    print("      Each box re-exports its own:  python token_tracker.py "
-                          "--start <first> --end <last> --export")
-                if not _cnt["local_is_current"]:
-                    print(f"      NOTE: this tree counts as {_cnt['local'][:12]}; the "
-                          f"corpus is on {_cnt['current'][:12]}. Pull before publishing.")
-
+            # Double counting is the one error that inflates a fleet total while
+            # every individual file still looks correct — so it is loud.
             if _agg["overlaps"]:
                 print()
-                print("  ! OVERLAP - these machines appear to have counted the same calls:")
+                print("  ⚠ OVERLAP — these machines appear to have counted the same calls:")
                 for _o in _agg["overlaps"][:5]:
                     print(f"      {_o['date']}  {' + '.join(_o['machines'])}  "
                           f"(Jaccard {_o['jaccard']})")
                 print("      totals above are inflated by the shared portion")
 
+            # Same class of failure as OVERLAP — the total looks right while
+            # every file in it looks right too — so it gets the same volume.
+            if _cnt["mixed"]:
+                print()
+                print("  ⚠ MIXED COUNTING — these machine-days were produced by "
+                      "code that counts differently:")
+                _by_machine_stale = defaultdict(list)
+                for _m, _d, _c in _cnt["stale"]:
+                    _by_machine_stale[_m].append(_d)
+                for _m, _days in sorted(_by_machine_stale.items()):
+                    print(f"      {_m:<16}{len(_days):>4} day(s)  "
+                          f"{min(_days)}..{max(_days)}")
+                print("      They cannot be added to the current cohort. Each box")
+                print("      re-exports its own:  python token_tracker.py "
+                      "--start <first> --end <last> --export")
+                if not _cnt["local_is_current"]:
+                    print(f"      NOTE: this box counts as {_cnt['local'][:8]}, and the "
+                          f"corpus is mostly {_cnt['current'][:8]} —")
+                    print("      publishing from here would add a third cohort. Pull first.")
+
             if _agg["anomalies"]:
                 print()
-                print(f"  outlier days (modified z >= {_fd.OUTLIER_Z}, log space):")
+                print(f"  outlier days (modified z ≥ {_fd.OUTLIER_Z}, robust to the spike itself):")
                 for _an in _agg["anomalies"][:5]:
                     print(f"      {_an['date']}  {fmt(_an['tokens']):>14}  "
                           f"z={_an['z']:+.1f}  {_an['direction']}")
