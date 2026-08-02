@@ -126,3 +126,32 @@ def test_model_bill_threads_the_date_through():
     intro, _ = tt.model_bill("claude-sonnet-5", bucket, "2026-08-01")
     later, _ = tt.model_bill("claude-sonnet-5", bucket, "2026-09-01")
     assert intro == pytest.approx(2.00) and later == pytest.approx(3.00)
+
+
+# --- family inference for unlisted variants ------------------------------
+
+def test_effort_variant_prices_from_its_family_not_the_default():
+    """`gemini-3.6-flash-high` is 3.6-flash at a different effort. Landing it
+    on DEFAULT_PRICING under-bills the newest model, because the default is
+    lower than every current Gemini rate."""
+    base = tt.price_for("gemini-3.6-flash")
+    variant = tt.price_for("gemini-3.6-flash-high")
+    assert variant[:3] == base[:3]
+    assert variant != tt.DEFAULT_PRICING
+
+
+def test_an_inferred_rate_never_claims_to_be_documented():
+    assert tt.price_for("gemini-3.6-flash-high")[3] == tt.EST
+    assert tt.price_for("gemini-3.6-flash")[3] == tt.DOC
+
+
+def test_family_inference_does_not_invent_prices():
+    """Only known variant suffixes are stripped, so an unrelated name still
+    falls to the default instead of borrowing someone else's rate."""
+    assert tt.price_for("totally-made-up-model") == tt.DEFAULT_PRICING
+    assert tt.price_for("auto-gemini-3") == tt.DEFAULT_PRICING
+
+
+def test_exact_entries_are_untouched_by_the_fallback():
+    for model in ("gemini-3.5-flash-high", "gemini-3.1-pro-low", "claude-opus-5"):
+        assert tt.price_for(model)[3] == tt.DOC
