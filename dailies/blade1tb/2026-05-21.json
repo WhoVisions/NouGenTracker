@@ -1,0 +1,157 @@
+{
+  "counter": "71aef8ff08fa",
+  "date": "2026-05-21",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 1740691765,
+    "input_tokens": 1730214,
+    "output_tokens": 793550,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-01T00:11:02-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 3452,
+  "machine": "blade1tb",
+  "models": {
+    "claude-opus-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 45155895,
+      "input_tokens": 32221,
+      "output_tokens": 20414,
+      "reasoning": 0
+    },
+    "claude-sonnet-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 17124759,
+      "input_tokens": 10070,
+      "output_tokens": 4638,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 12738412,
+      "input_tokens": 107136,
+      "output_tokens": 56718,
+      "reasoning": 0
+    },
+    "gemini-3.1-pro-high (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 102514,
+      "input_tokens": 23515,
+      "output_tokens": 4588,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 744307429,
+      "input_tokens": 851056,
+      "output_tokens": 404274,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash-high (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 857638568,
+      "input_tokens": 677703,
+      "output_tokens": 286440,
+      "reasoning": 0
+    },
+    "gemini-3.5-flash-low (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 63624188,
+      "input_tokens": 28513,
+      "output_tokens": 16478,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "002144be3e602682",
+    "002b0102db5d2743",
+    "0065f3b64f000264",
+    "006ae1846b91f50f",
+    "007f5f7b97afd158",
+    "008b7389ffc1c419",
+    "0096eb8ac3adde40",
+    "010541d1bbcc0ed0",
+    "0107cc9d818a9395",
+    "010a39affe140902",
+    "010e49d28e8b5014",
+    "01160340060e4d8e",
+    "0119908ed7a72161",
+    "0123f343adff91a6",
+    "01325ba8cf86ba07",
+    "013548f3a76d8940",
+    "0152b7ea21844109",
+    "015cf91ca75cd12c",
+    "018325599446b76e",
+    "01972b891c54fbf6",
+    "01987aa4930ec6c5",
+    "019eb3b95117fb3a",
+    "019edbaa87fb79e8",
+    "01c30afdb463bfe7",
+    "01c8e41421cbf596",
+    "01e17f3b4d51c1aa",
+    "020292c99d2df0f5",
+    "020e8418fde3536f",
+    "0222607aab0d3f59",
+    "0224dc3c94f05009",
+    "022895a13f5cb8bc",
+    "022aa1ecda0c2b32",
+    "023024fa9d903581",
+    "02492753b13010f5",
+    "024cd45277b1eebf",
+    "025018290755c130",
+    "0256f6e664341182",
+    "026e25ef73daff59",
+    "0275798f8db311b6",
+    "02796acaf89ab031",
+    "029f99fe0744e7b6",
+    "02e83242d3a82b0b",
+    "030b6f131d96a139",
+    "032e9c737407bb86",
+    "036a6ffa59bf3992",
+    "0371cd11c6db73f0",
+    "0376bbb084cec0aa",
+    "038ddf49395b692b",
+    "0392e541396fe032",
+    "03c9f847b9afc7ab",
+    "03cccb0f121db755",
+    "03e4670775377c80",
+    "03e9d18a6d7feb6f",
+    "0445178223de073a",
+    "046aebf32d49dcb0",
+    "04a72a597193c97c",
+    "04c1b544b40f43a5",
+    "04c4662e47344ed8",
+    "04ce6dda232175bd",
+    "04e426d922b85ff3",
+    "051aa2ed4e3084c3",
+    "051ac4a581ddb9a6",
+    "05326bf34cfd9507",
+    "0532d91cabd82c9a"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 1740691765,
+      "input_tokens": 1730214,
+      "output_tokens": 793550,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 1740691765,
+    "input_tokens": 1730214,
+    "output_tokens": 793550,
+    "reasoning": 0
+  }
+}
