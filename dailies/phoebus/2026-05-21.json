@@ -1,5 +1,4 @@
 {
-  "counter": "22555db5d239",
   "date": "2026-05-21",
   "estimated": {
     "cache_creation": 0,
@@ -15,7 +14,7 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-07-31T22:58:35-04:00",
+  "generated_at": "2026-07-31T22:21:42-04:00",
   "generated_by": "claude-cli",
   "invocations": 240,
   "machine": "phoebus",
@@ -36,7 +35,7 @@
     }
   },
   "partial": false,
-  "schema": 3,
+  "schema": 2,
   "sketch": [
     "005345bc5f0a456b",
     "0273588dac91db88",

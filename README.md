@@ -87,7 +87,7 @@ showing up in the report. Config via `FLEET_PROXY_PORT`, `FLEET_OLLAMA_UPSTREAM`
 
 *Part of the NouGenAi / Who Visions fleet. Built for the Stadium.*
 
-## Fleet totals — every machine's usage and spend, summed
+## Fleet dailies — every machine's totals, summed
 
 `token_tracker.py` reads the logs on the box it runs on. That answer never
 leaves the machine, so the fleet-wide question had no answer. Dailies are the
@@ -95,42 +95,25 @@ transport: each machine exports its own days, git carries them, every machine
 sums them.
 
 ```bash
-python3 token_tracker.py --install-hooks          # once per clone (see below)
+python3 token_tracker.py --install-hooks         # once per clone (see below)
 NOUGEN_MACHINE=phoebus python3 token_tracker.py --publish
-git push -u origin dailies/phoebus                # then open a PR
+git push -u origin dailies/phoebus               # then open a PR
 
-python3 token_tracker.py --fleet                  # totals across every machine
+python3 token_tracker.py --fleet                 # totals across every machine
 ```
 
 Each machine writes only `dailies/<machine>/<YYYY-MM-DD>.json`, so two boxes
-pushing at once cannot conflict. Re-exporting a day replaces that day's file, so
-a re-run can never double-count.
-
-To publish on a schedule, run `--publish` from cron or launchd on each box. It
-is deliberately not a GitHub Action: a runner has no access to the agent logs on
-your machines, so the export has to happen where the logs are.
-
-### Dollars are a view, not a record
-
-Daily files store **tokens only**. Spend is recomputed from those tokens at read
-time, using the price table in the clone doing the reading.
-
-This matters because prices and measurements age differently. `claude-opus-5`
-billed at a fifth of its real rate until the table was fixed; introductory rates
-expire; a machine on an older checkout has an older table. Freezing dollars into
-each daily file would bake every machine's pricing bugs into the fleet total
-permanently, and correcting a price would mean rewriting every published file.
-Recomputing means one table fix re-prices every machine retroactively, including
-days exported months ago.
+pushing at once cannot conflict. Re-exporting a day replaces that day's file,
+so a re-run can never double-count.
 
 ### Machine identity
 
-Resolved the way NouGenRelay resolves it — `NOUGEN_MACHINE`, else the hostname,
-lowercased and slugified — so one grep finds a box's commits, its handoffs, and
-its dailies. **Set `NOUGEN_MACHINE` if the box already has a fleet name.** One
-machine under two names is counted twice, and the total is wrong in the
-direction that looks plausible; `--export` warns on a name the fleet has never
-published under.
+Resolved the same way NouGenRelay resolves it — `NOUGEN_MACHINE`, else the
+hostname, lowercased and slugified — so one grep finds a box's commits, its
+handoffs and its dailies. **Set `NOUGEN_MACHINE` if the box already has a fleet
+name.** One machine under two names is counted twice, and the total is wrong in
+the direction that looks plausible; `--export` warns when it sees a name the
+fleet has never published under.
 
 `--install-hooks` is per-clone because `core.hooksPath` lives in `.git/config`,
 which cannot be committed. Nothing depends on someone having run it: the tool
@@ -139,17 +122,67 @@ covers commits written by hand.
 
 ### What the numbers say about themselves
 
-- **confidence** — the share of the total that was *measured* rather than
-  inferred from text length. On this fleet only ~26% of reported tokens are
-  measured, which a plain total hides completely.
+- **confidence** — the share of the total that was *measured*. Some providers
+  report usage; others are inferred from text length. These are tracked
+  separately, because folding a guess into a measurement produces a number you
+  cannot reason about. On this fleet only ~32% of reported tokens are measured.
+- **counting version** — `schema` says a daily file can be *read*. It says
+  nothing about whether its numbers can be *compared*. On 2026-08-01 the Claude
+  parser stopped billing one API request once per content block; the file format
+  did not change, so every daily already published stayed schema-valid and kept
+  summing into the fleet total while meaning something different. Each daily now
+  carries a `counter` — a digest of the AST of the functions that decide what
+  gets counted, so it moves when a dedup key changes and *doesn't* move when a
+  comment does, and nobody has to remember to bump it. When the published files
+  disagree, `--fleet` prints per-cohort totals and refuses to print one FLEET
+  line, and `--export` tells the machine which of its own days to re-export.
+  Unstamped files are never "current": that is the absence of a version, not a
+  version, and a corpus of nothing but unstamped files is the most wrong a fleet
+  total can be.
 - **overlap** — if two machines read the same synced log directory, both report
-  the same calls and a plain sum doubles them. Every machine-day carries a
-  64-wide bottom-k MinHash sketch of its call fingerprints; the aggregator
-  estimates Jaccard similarity and says so when it is high. ~0.5 KB per
-  machine-day regardless of call volume.
-- **outlier days** — modified z-score (median + MAD) rather than mean and
-  standard deviation, which one spike would drag until it hid itself. Computed
-  on log10 of the daily total: usage is multiplicative and spans three orders of
-  magnitude here, and on raw values MAD inflates until nothing clears the
-  threshold (max |z| = 1.81 across this fleet's 17 days — silence). In log space
-  the same series peaks at 5.23.
+  the same calls and a plain sum silently doubles them. Every machine-day
+  carries a 64-wide bottom-k MinHash sketch of its call fingerprints; the
+  aggregator estimates Jaccard similarity between machines and says so when it
+  is high. Costs ~0.5 KB per machine-day regardless of call volume.
+- **outlier days** — modified z-score (Iglewicz & Hoaglin, median + MAD) rather
+  than mean and standard deviation, which a single spike would drag until the
+  spike hid itself. Computed on log10 of the daily total: usage is
+  multiplicative and spans three orders of magnitude here, and on raw values
+  MAD inflates until nothing clears the threshold (max |z| = 1.81 across this
+  fleet's 17 days — silence). In log space the same series peaks at 5.23.
+
+## Working on this repo from more than one machine
+
+This repo is worked from several boxes. Two mechanisms keep them from doing each
+other's work twice, both carried by git — no server, no daemon.
+
+**Before you start**, announce it:
+
+```bash
+relay check                                    # has another machine moved?
+relay claim take -s token_tracker.py -g "fix pricing table"
+# ... work ...
+relay claim release -s token_tracker.py
+relay create -g "what you did" -m "where you left off"
+```
+
+Records land in `.handoffs/`. Install the CLI from
+[NouGenRelay](https://github.com/who-visions/nougenrelay); if `relay` isn't on
+PATH after `pip install -e .`, `python -m nougen_relay` always works.
+
+**Commits carry their origin.** `.githooks/prepare-commit-msg` stamps every
+commit with `Machine:` and `Agent:` trailers, so `git log` answers "which box,
+which lane" rather than just "which GitHub account":
+
+```bash
+python3 token_tracker.py --install-hooks
+```
+
+This is per-clone — `core.hooksPath` lives in `.git/config` and cannot be
+committed — so a fresh clone starts unstamped until someone runs it. Nothing
+depends on it: `--publish` stamps its own commits, and the hook only covers
+commits written by hand.
+
+Skipping `relay check` is not free. The route-recommendations rewrite in this
+repo was written twice on two machines on the same afternoon, and one of the two
+was thrown away.
