@@ -12,3 +12,12 @@ ann_matrix.npy
 ann_labels.json
 .DS_Store
 audit_log.jsonl
+
+# Machine-local operational artifacts. This repository is PUBLIC: these are one
+# `git add -A` from publishing subscription invoices, spend reports and a
+# machine's own config to strangers. tracker_config.example.json is the tracked
+# template; the real one stays on the box.
+receipts/
+reports/
+week_report.txt
+tracker_config.json
