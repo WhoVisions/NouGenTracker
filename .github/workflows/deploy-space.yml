@@ -1,10 +1,10 @@
 name: Sync to Hugging Face Space
 
 # Mirrors main to a free STATIC Hugging Face Space so the fleet can read this
-# repo's records over HTTPS 24/7 without git credentials. Pattern lifted from
-# NouGenShards' deploy-space.yml (orphan snapshot + LFS guard + boot verify),
-# adapted for the static SDK: no server, files served as-is, so the workflow
-# injects README front-matter and generates index.html + index.json.
+# repo's records over HTTPS 24/7 without git credentials. Pattern adapted from
+# NouGenShards' deploy-space.yml, with one transport change: HF's git gateway
+# rejects fine-grained tokens, so the snapshot is uploaded via the HTTP API
+# (huggingface_hub.upload_folder) instead of git push.
 #
 # One-time setup (repo Settings):
 #   - Secret  HF_TOKEN: Hugging Face token with write access to the Space
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Push snapshot to Space
+      - name: Upload snapshot to Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: ${{ vars.HF_SPACE }}
@@ -32,21 +32,9 @@ jobs:
             echo "HF_TOKEN secret and/or HF_SPACE variable not set - skipping Space sync."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git lfs install --local
-          git checkout --orphan hf-deploy
-          cat >> .gitattributes <<'EOF'
-          *.png filter=lfs diff=lfs merge=lfs -text
-          *.jpg filter=lfs diff=lfs merge=lfs -text
-          *.jpeg filter=lfs diff=lfs merge=lfs -text
-          *.gif filter=lfs diff=lfs merge=lfs -text
-          *.ico filter=lfs diff=lfs merge=lfs -text
-          *.webp filter=lfs diff=lfs merge=lfs -text
-          EOF
           echo "${GITHUB_SHA}" > .deploy_sha
           # Static SDK reads its config from README front-matter; the repo's own
-          # README doesn't carry it, so prepend it in the snapshot only.
+          # README doesn't carry it, so prepend it in the uploaded snapshot only.
           TITLE="$(basename "$HF_SPACE")"
           { printf -- '---\ntitle: %s\nemoji: 🛰️\ncolorFrom: gray\ncolorTo: blue\nsdk: static\npinned: false\n---\n\n' "$TITLE"; cat README.md 2>/dev/null; } > README.hf.md
           mv README.hf.md README.md
@@ -55,18 +43,30 @@ jobs:
           import json, os, subprocess
           files = subprocess.run(["git", "ls-files"], capture_output=True, text=True).stdout.split()
           files = [f for f in files if not f.startswith(".git")]
+          files += [".deploy_sha", "index.json", "index.html"]
           sha = open(".deploy_sha").read().strip()
-          json.dump({"deploy_sha": sha, "files": files}, open("index.json", "w"), indent=1)
-          rows = "\n".join('<li><a href="%s">%s</a></li>' % (f, f) for f in sorted(files))
+          json.dump({"deploy_sha": sha, "files": sorted(set(files))}, open("index.json", "w"), indent=1)
+          rows = "\n".join('<li><a href="%s">%s</a></li>' % (f, f) for f in sorted(set(files)))
           open("index.html", "w").write(
               "<!doctype html><title>%s</title><h1>%s</h1><p>deploy %s</p>"
               "<p><a href='index.json'>index.json</a></p><ul>%s</ul>"
               % (os.environ.get("HF_SPACE", "mirror"), os.environ.get("HF_SPACE", "mirror"), sha[:12], rows))
           PYEOF
-          git rm -r --cached -q -f .
-          git add -A
-          git commit -qm "Space deploy: snapshot of ${GITHUB_SHA}"
-          git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" HEAD:main
+          pip install -q "huggingface_hub>=0.24"
+          python3 - <<'PYEOF'
+          import os
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          api.upload_folder(
+              folder_path=".",
+              repo_id=os.environ["HF_SPACE"],
+              repo_type="space",
+              delete_patterns=["*"],
+              ignore_patterns=[".git/*", ".git*"],
+              commit_message="Space deploy: snapshot of " + os.environ["GITHUB_SHA"],
+          )
+          print("uploaded snapshot", os.environ["GITHUB_SHA"])
+          PYEOF
       - name: Verify mirror serves the new snapshot
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
