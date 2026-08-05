@@ -1,0 +1,71 @@
+{
+  "counter": "3c881c47eb1d",
+  "date": "2026-06-14",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 842310,
+    "input_tokens": 7405,
+    "output_tokens": 1970,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-04T21:12:48-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 20,
+  "machine": "whoart",
+  "models": {
+    "gemini-3.5-flash-medium (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 842310,
+      "input_tokens": 7405,
+      "output_tokens": 1970,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "0d6535106f9c1eb1",
+    "1e8d7cfbb5ccb595",
+    "25c111407ec0bdfd",
+    "25f34e1c8647205a",
+    "39a4e7891bc05cee",
+    "4018ecf11ed570c3",
+    "4a37f3aa74c6ac65",
+    "615f0354ceccc1f1",
+    "7ac084cd1522ff52",
+    "853c4c6e023f5042",
+    "982880e225b24e93",
+    "a915e5921b391265",
+    "aa2e02ccb57d3538",
+    "c03576640d3571bf",
+    "c094a47283be12c0",
+    "c356ba0cdf0f530d",
+    "cd98b2fee126e8c9",
+    "e680df1e44aac291",
+    "e8d9fff6491445c8",
+    "e9f6ce44e5ab3d79"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 842310,
+      "input_tokens": 7405,
+      "output_tokens": 1970,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 842310,
+    "input_tokens": 7405,
+    "output_tokens": 1970,
+    "reasoning": 0
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "counter": "3c881c47eb1d",
+  "date": "2026-04-20",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 1375360,
+    "input_tokens": 1535421,
+    "output_tokens": 10257,
+    "reasoning": 3126
+  },
+  "generated_at": "2026-08-04T21:12:48-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 43,
+  "machine": "whoart",
+  "models": {
+    "gpt-5.4-mini": {
+      "cache_creation": 0,
+      "cache_read": 1375360,
+      "input_tokens": 1535421,
+      "output_tokens": 10257,
+      "reasoning": 3126
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "01535dba97bd8c8d",
+    "03c2318a405c3c85",
+    "081192d446b2fb45",
+    "0f7523f1a11e83ef",
+    "1667b8fc4e9bb0c0",
+    "1c5f86139c776b5e",
+    "1cb460c9dafea9d0",
+    "1fe77e8a2b5d2e56",
+    "201d22f31f0aeca2",
+    "329936f542367202",
+    "3bc72a8b9a4417d5",
+    "3d0e83ab305e7b2c",
+    "47f7f51dbf921d7b",
+    "4b7d40922747bb51",
+    "5782eadce8280bb0",
+    "58ae2d9832a1bec3",
+    "591e7d2bed417053",
+    "59f0bfb1461fe086",
+    "642c0be800b27035",
+    "75be69b08fc64006",
+    "7bedf74375b28a07",
+    "7d815a7ad457ec79",
+    "80325b21ae82aa2d",
+    "85cd83c87fc944ba",
+    "891191fd4d3ac023",
+    "947034bafcd978c2",
+    "9831cbc5228a4409",
+    "989fcff76948abd1",
+    "9c591090d14ff753",
+    "a496f5aa27f11a30",
+    "ace2265587320424",
+    "b535d92f3b66b02d",
+    "babb590db506f4b1",
+    "be16144111c67d96",
+    "bf654d61b6fb36a6",
+    "bfe0ca41d22765a6",
+    "c11ca85db45c0b70",
+    "c45a90948776c9a6",
+    "cc243e11a202eee2",
+    "ccd06a0c7d1e83bb",
+    "d2aa2978e4ee2dd6",
+    "dab909b5e8139d63",
+    "e64225d80fbc278c"
+  ],
+  "sources": {
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 1375360,
+      "input_tokens": 1535421,
+      "output_tokens": 10257,
+      "reasoning": 3126
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 1375360,
+    "input_tokens": 1535421,
+    "output_tokens": 10257,
+    "reasoning": 3126
+  }
+}

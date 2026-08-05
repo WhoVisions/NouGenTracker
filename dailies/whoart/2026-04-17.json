@@ -1,0 +1,87 @@
+{
+  "counter": "3c881c47eb1d",
+  "date": "2026-04-17",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 1443328,
+    "input_tokens": 1737362,
+    "output_tokens": 9842,
+    "reasoning": 5582
+  },
+  "generated_at": "2026-08-04T21:12:48-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 36,
+  "machine": "whoart",
+  "models": {
+    "gpt-5.4-mini": {
+      "cache_creation": 0,
+      "cache_read": 1443328,
+      "input_tokens": 1737362,
+      "output_tokens": 9842,
+      "reasoning": 5582
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "05d832b8daa657fc",
+    "063aba1da0fcc7e8",
+    "0c37f42876517c2a",
+    "150cef7cee7cc621",
+    "17dd8cb96e32953d",
+    "1caea5fdbeb19c0f",
+    "1d92324f5eed3209",
+    "215e9e7e968ff28d",
+    "24cc6b31abb3e24a",
+    "33609e7ba9d71fa5",
+    "3defcd7e08342fca",
+    "3df9d26c8bf54fd7",
+    "48ed2838cd6b689e",
+    "5673ccacdafd9b9e",
+    "5d41bedfcd381528",
+    "617da2ba4ae4cc98",
+    "6cfa0bf837dd4fe5",
+    "7350bcf9129fde16",
+    "7a6e1beebb5c8bc4",
+    "81ccb64a7cdcb4d8",
+    "8d13899ed9cbb30f",
+    "8dee9c34441c913e",
+    "94e6bffb3e365d9f",
+    "958f62e9bd59308f",
+    "9d389d0a84f076cb",
+    "a7e5c2db381b997f",
+    "b84a791a7d8a7346",
+    "bc07ad5967ebd353",
+    "d4421b53bc51651a",
+    "d47024d74f79cb5b",
+    "de198fd0035f79eb",
+    "e3fb24461c5abb54",
+    "eb38ebd3cf062a76",
+    "edfdffd16dccc589",
+    "f3953b078a7b6a56",
+    "f4361c68d28bc525"
+  ],
+  "sources": {
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 1443328,
+      "input_tokens": 1737362,
+      "output_tokens": 9842,
+      "reasoning": 5582
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 1443328,
+    "input_tokens": 1737362,
+    "output_tokens": 9842,
+    "reasoning": 5582
+  }
+}
