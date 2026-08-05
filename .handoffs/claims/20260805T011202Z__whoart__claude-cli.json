@@ -1,0 +1,12 @@
+{
+  "machine": "whoart",
+  "agent": "claude-cli",
+  "goal": "re-export whoart dailies onto the current counter; report what blocks the fleet sum",
+  "scope": "dailies/whoart NouGenTracker-reexport",
+  "status": "active",
+  "session": "c158477b-5697-4318-b9fc-69d3d38931b7",
+  "branch": "main",
+  "sha": "dd7bc39",
+  "created_utc": "2026-08-05T01:12:02.548147+00:00",
+  "ttl_hours": 8.0
+}
