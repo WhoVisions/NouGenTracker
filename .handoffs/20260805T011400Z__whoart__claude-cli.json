@@ -1,0 +1,18 @@
+{
+  "id": "20260805T011400Z__whoart__claude-cli",
+  "machine": "whoart",
+  "agent": "claude-cli",
+  "goal": "whoart re-exported onto 3c881c47eb1d; fleet sum now blocked on one command each for blade1tb and phoebus",
+  "branch": "main",
+  "sha": "9b4a24a",
+  "remote": "origin",
+  "created_utc": "2026-08-05T01:14:00.414574+00:00",
+  "stack": {
+    "manifests": [
+      "requirements.txt"
+    ],
+    "frameworks": []
+  },
+  "dirty": true,
+  "status": "open"
+}
