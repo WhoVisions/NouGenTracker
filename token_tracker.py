@@ -195,7 +195,15 @@ elif MONTH:
         sys.exit(1)
 else:
     cutoff_env = os.environ.get("TOKEN_TRACKER_CUTOFF")
-    CUTOFF = datetime.fromisoformat(cutoff_env) if cutoff_env else (NOW - timedelta(days=DAYS))
+    if cutoff_env:
+        CUTOFF = datetime.fromisoformat(cutoff_env)
+        # a bare ISO stamp ("2026-08-15T17:00") is naive; every parsed record
+        # timestamp is tz-aware, so localize it to this machine's zone rather
+        # than blowing up on the first comparison.
+        if CUTOFF.tzinfo is None:
+            CUTOFF = CUTOFF.astimezone()
+    else:
+        CUTOFF = NOW - timedelta(days=DAYS)
     try:
         LIMIT_UPPER = datetime.max.replace(tzinfo=timezone.utc).astimezone()
     except OSError:
