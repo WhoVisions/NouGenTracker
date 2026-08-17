@@ -1,0 +1,55 @@
+{
+  "counter": "3c881c47eb1d",
+  "date": "2026-08-08",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 95375,
+    "cache_read": 164531,
+    "input_tokens": 8,
+    "output_tokens": 1117,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-08T18:46:56-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 4,
+  "machine": "whoart",
+  "models": {
+    "claude-opus-5": {
+      "cache_creation": 95375,
+      "cache_read": 164531,
+      "input_tokens": 8,
+      "output_tokens": 1117,
+      "reasoning": 0
+    }
+  },
+  "partial": true,
+  "schema": 3,
+  "sketch": [
+    "62a60363ab29e2c2",
+    "68bd696d8918e22e",
+    "95888b988cd3eaff",
+    "de1e67364e119be0"
+  ],
+  "sources": {
+    "Claude Code": {
+      "cache_creation": 95375,
+      "cache_read": 164531,
+      "input_tokens": 8,
+      "output_tokens": 1117,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 95375,
+    "cache_read": 164531,
+    "input_tokens": 8,
+    "output_tokens": 1117,
+    "reasoning": 0
+  }
+}
