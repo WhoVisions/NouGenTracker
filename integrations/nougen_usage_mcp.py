@@ -144,7 +144,7 @@ _NUM = r"[\d,]+"
 _MACHINE_ROW = re.compile(
     rf"^\s+(?P<machine>[a-z0-9][\w.-]*)\s+(?P<input>{_NUM})\s+"
     rf"(?P<output>{_NUM})\s*(?P<cache>{_NUM})\s+\$(?P<spend>[\d,.]+)\s*$")
-_MODEL_ROW = re.compile(rf"^\s+\$(?P<spend>[\d,.]+)\s+(?P<model>\S+)")
+_MODEL_ROW = re.compile(r"^\s+\$(?P<spend>[\d,.]+)\s+(?P<model>\S+)")
 _DAY_ROW = re.compile(
     rf"^(?P<day>\d{{4}}-\d{{2}}-\d{{2}})\s+(?P<input>{_NUM})\s+"
     rf"(?P<output>{_NUM})\s+(?P<cache>{_NUM})\s+(?P<reasoning>{_NUM})\s*$")
@@ -367,7 +367,6 @@ def tracker_context() -> Dict[str, Any]:
 
 def tool_provenance() -> Tuple[str, Dict[str, Any]]:
     context = tracker_context()
-    root = tracker_dir()
     data = {
         **context,
         "resolved_by": ("NOUGENTRACKER_DIR" if os.environ.get("NOUGENTRACKER_DIR")

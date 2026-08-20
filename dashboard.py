@@ -20,7 +20,7 @@ from __future__ import annotations
 import html
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 # Categorical slots 1-3 (light, dark). Fixed order, assigned by machine name,
 # never cycled and never re-assigned when the machine list changes — colour
