@@ -3,8 +3,8 @@
   "date": "2026-07-03",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 10636147,
-    "input_tokens": 31401,
+    "cache_read": 2721821,
+    "input_tokens": 37044,
     "output_tokens": 27465,
     "reasoning": 0
   },
@@ -15,7 +15,7 @@
     "output_tokens": 351359,
     "reasoning": 0
   },
-  "generated_at": "2026-08-28T18:10:06-04:00",
+  "generated_at": "2026-08-28T19:13:19-04:00",
   "generated_by": "claude-cli",
   "invocations": 656,
   "machine": "blade1tb",
@@ -50,8 +50,8 @@
     },
     "gemini-3.5-flash-high (estimated)": {
       "cache_creation": 0,
-      "cache_read": 10636147,
-      "input_tokens": 31401,
+      "cache_read": 2721821,
+      "input_tokens": 37044,
       "output_tokens": 27465,
       "reasoning": 0
     }
@@ -60,13 +60,11 @@
   "provider_stats": {},
   "schema": 3,
   "sketch": [
-    "00733f3fb9c7255f",
-    "0110ba3ac5cddcae",
     "0142ed31e9392c1d",
+    "0149c7116261cff3",
     "0170ca815b25ede4",
     "0196fce590c1c535",
     "02a2d345bbc4e074",
-    "03f0fb929105c3f3",
     "040999b5f2ae4975",
     "04367470b0db6ddd",
     "0446059f07626770",
@@ -75,6 +73,7 @@
     "04917806e7393a1e",
     "04e961cbd0a721a7",
     "04ea0e42ae6e121b",
+    "057040c4e1931d9a",
     "0606103728b0ac15",
     "062f18ad2b2eef3a",
     "0674ae81b03e947c",
@@ -100,25 +99,26 @@
     "1070724954978ffd",
     "108587387bf7218d",
     "108b1ced70b37ae0",
+    "10dfc13e5510eda5",
     "11c05eaddb00454b",
     "11cc9ffe7b6cb880",
     "11d505d967148529",
     "1224f46e12755c7e",
     "1237eae736f27b67",
     "12c774c777a13023",
+    "139089c4f4a125d7",
     "13b0105ef4ebd4eb",
     "13e617c6da5372b6",
     "14869f65daf50fdd",
     "152c54bdbc60ef6e",
     "153ec9e5c645ae76",
     "15ab785c9f9cea9d",
-    "163d583ae3e30960",
     "16aff59b3e615ba1",
     "1714ab607861b202",
-    "17c72b78d7ba91de",
     "17d857f20a1c362c",
     "1803957114369d35",
     "181516af2f070f6e",
+    "183f3be68a810bfc",
     "1888ac72058ac8ba",
     "19095404dacbfcf2",
     "19407d3f43065172",
@@ -128,8 +128,8 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 10636147,
-      "input_tokens": 31401,
+      "cache_read": 2721821,
+      "input_tokens": 37044,
       "output_tokens": 27465,
       "reasoning": 0
     },
@@ -143,8 +143,8 @@
   },
   "totals": {
     "cache_creation": 4014976,
-    "cache_read": 150672169,
-    "input_tokens": 210259,
+    "cache_read": 142757843,
+    "input_tokens": 215902,
     "output_tokens": 378824,
     "reasoning": 0
   }
