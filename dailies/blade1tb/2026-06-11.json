@@ -1,5 +1,5 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-06-11",
   "estimated": {
     "cache_creation": 0,
@@ -11,11 +11,11 @@
   "exact": {
     "cache_creation": 0,
     "cache_read": 22481280,
-    "input_tokens": 23998483,
-    "output_tokens": 121179,
+    "input_tokens": 1517203,
+    "output_tokens": 73571,
     "reasoning": 47608
   },
-  "generated_at": "2026-08-08T00:27:57-04:00",
+  "generated_at": "2026-08-28T16:49:39-04:00",
   "generated_by": "claude-cli",
   "invocations": 613,
   "machine": "blade1tb",
@@ -44,85 +44,111 @@
     "gpt-5.4-mini": {
       "cache_creation": 0,
       "cache_read": 19981568,
-      "input_tokens": 21174510,
-      "output_tokens": 100046,
+      "input_tokens": 1192942,
+      "output_tokens": 62944,
       "reasoning": 37102
     },
     "gpt-5.5": {
       "cache_creation": 0,
       "cache_read": 2499712,
-      "input_tokens": 2823973,
-      "output_tokens": 21133,
+      "input_tokens": 324261,
+      "output_tokens": 10627,
       "reasoning": 10506
     }
   },
   "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9368,
+      "distinct_sessions": 3,
+      "peak_context_used_percent": 87.06,
+      "plan_types": [
+        "team"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 49.0,
+          "peak_used_percent": 100.0,
+          "resets_at": 1781253355,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 8.0,
+          "peak_used_percent": 45.0,
+          "resets_at": 1781840155,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 24119662,
+      "uncached_input_tokens": 1517203
+    }
+  },
   "schema": 3,
   "sketch": [
     "00a6ea341a68ffe0",
-    "00b32814dcf1941f",
-    "028c1a86eacec196",
     "02d31b529890c722",
-    "0303665168cbacff",
-    "035c642bf184f583",
+    "03597d662fb396ee",
+    "0391a3b697b8ba71",
     "03c901c23ae0e04a",
-    "03e9ed1e2e04a250",
+    "03d0228ff4f80d87",
     "04213e9f9e448cfc",
     "04c6731a759fec1e",
-    "0534ab0ac0cd5de3",
-    "054f90f45abd11bb",
+    "0542db110edaf048",
     "05b5f4a06c8038a0",
     "06460fce7fe9d2a9",
     "06727734e0a565cc",
-    "0695746cd3bd894f",
-    "07016d2ea6c594b2",
+    "06fdfd74dbed6d4d",
     "074a24aa067c4d91",
     "07950d1a62fe1095",
-    "088fbdb57ff5a9cf",
-    "089aa5605da58491",
+    "08b982694d24f7fb",
     "08d3f9946794384e",
     "08ff62b4bb07edb5",
     "094f82408994c654",
-    "0ac6473f2a756617",
+    "0a11aa38c532800e",
     "0ad450b1e7923e14",
-    "0b0a95dec8121679",
+    "0b26edfa231666a3",
     "0b6b1afc2c2c6ef5",
-    "0c66957d024a4f6c",
     "0c7550cc5f759bc9",
     "0c838f4e7505eed7",
+    "0ca2934ff07ce98f",
     "0cda22794ac5a2b8",
     "0cdbf310ded991f6",
-    "0cfd788463af1a3b",
     "0d4a0a1edfa92447",
     "0d7325732d21e918",
     "0d8e37acd151df04",
-    "0dac8c6e9af41504",
-    "0e686c8f1127a9bb",
+    "0e987b5ca17f70be",
     "0eb16b6d230a4e6d",
     "0f88c0165b10cc9f",
     "103d24789e0dfd24",
     "1041a32b0e9421f1",
-    "10f136b3655d482b",
+    "104ecdc1b6f14a86",
     "120747620af9fa66",
     "12419880fc702753",
     "12657a45df5e2d04",
     "13647ddfe3c353eb",
-    "1367619796cc4145",
-    "13a21459239bb32e",
     "13d77098be660471",
-    "13e8ba68ec9541c8",
     "13eb2b1ad3f15d8a",
     "140b95f91ce774c9",
     "14d752c833873714",
-    "154ef85d78476923",
     "15c9a8a554def5f7",
-    "1605cf36b54802cf",
     "16c2da3f9b26be38",
     "16f800d66ab1d066",
-    "17afad5ade6f0733",
+    "16fd48a2b2493ee0",
+    "185c4d7481496329",
     "186a9d839002b467",
+    "193d670f40ade84e",
     "19cda0af2274a22a",
-    "1a1339fcf8d19507"
+    "1a16488b7d3e7464",
+    "1a3c403b50c1962b",
+    "1b9347a0d46d96a4",
+    "1bbc5c7f23ff11d8",
+    "1bfc5d98496e9267",
+    "1c0019dfae583845",
+    "1c2eb58e71143e7a",
+    "1ca8acd6cb1f86ce",
+    "1df652e581b9150f",
+    "1e1f5fcab606f00e",
+    "1ead5fd4dd66046f"
   ],
   "sources": {
     "Antigravity (Fallback)": {
@@ -135,16 +161,16 @@
     "OpenAI Codex": {
       "cache_creation": 0,
       "cache_read": 22481280,
-      "input_tokens": 23998483,
-      "output_tokens": 121179,
+      "input_tokens": 1517203,
+      "output_tokens": 73571,
       "reasoning": 47608
     }
   },
   "totals": {
     "cache_creation": 0,
     "cache_read": 68424583,
-    "input_tokens": 24178223,
-    "output_tokens": 192703,
+    "input_tokens": 1696943,
+    "output_tokens": 145095,
     "reasoning": 47608
   }
 }

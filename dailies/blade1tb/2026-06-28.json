@@ -1,5 +1,5 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-06-28",
   "estimated": {
     "cache_creation": 0,
@@ -11,11 +11,11 @@
   "exact": {
     "cache_creation": 0,
     "cache_read": 1458304,
-    "input_tokens": 1607705,
-    "output_tokens": 13527,
+    "input_tokens": 149401,
+    "output_tokens": 7339,
     "reasoning": 6188
   },
-  "generated_at": "2026-08-08T00:27:57-04:00",
+  "generated_at": "2026-08-28T16:49:39-04:00",
   "generated_by": "claude-cli",
   "invocations": 138,
   "machine": "blade1tb",
@@ -30,78 +30,104 @@
     "gpt-5.5": {
       "cache_creation": 0,
       "cache_read": 1458304,
-      "input_tokens": 1607705,
-      "output_tokens": 13527,
+      "input_tokens": 149401,
+      "output_tokens": 7339,
       "reasoning": 6188
     }
   },
   "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9071,
+      "distinct_sessions": 1,
+      "peak_context_used_percent": 28.0,
+      "plan_types": [
+        "team"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 34.0,
+          "peak_used_percent": 34.0,
+          "resets_at": 1782680390,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 22.0,
+          "peak_used_percent": 22.0,
+          "resets_at": 1783179056,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 1621232,
+      "uncached_input_tokens": 149401
+    }
+  },
   "schema": 3,
   "sketch": [
-    "015ebeaf2ce61cef",
+    "01dc9405e05bfa7c",
     "031fad57b7c7ba92",
-    "0360380d38d332cc",
     "040dbdcc2941e5ea",
-    "04f19e7624a02608",
     "05d058d0e4d16a57",
     "08c3431e373479a1",
     "08fde08ba79a1585",
-    "0c3bb4b25b0a162b",
+    "0e2f133344b9c38d",
     "0ef3d2ab695c38c4",
+    "126b077a107822ca",
     "13399a17945de8cb",
     "1377086a5cd53dfa",
     "14222554fcb60b96",
     "1482562f34aaf14d",
     "1562979c33625eb6",
+    "165a07c700322bed",
     "18bce7f2cb241dc2",
     "18c70e3ee7578500",
     "1b9c52a7c01199f6",
     "1bc64917a0d64b21",
     "1c033a14319d5f7f",
     "1c334094f58f1d7c",
-    "1d4b8fa0c6ea98ad",
+    "1c649769983b369e",
+    "20115a88bd5c9aa6",
     "20ed6ab07e130e3d",
+    "2200a76bff1db12f",
     "22290e908c3ff240",
     "243ec9c52066dc1b",
     "252824fb9a86c109",
-    "25b49bba72ad6ab2",
     "265c49302fb35006",
     "287c8269ad822e10",
     "2c22f78871023b40",
     "2db4175ef4f112e2",
     "2ddbcbeaeb6f98ff",
-    "2f1aa862024c2ebe",
     "2f527c92019f2838",
-    "3102ef678517d2b2",
     "316eb02ae523fe36",
     "32cd6cf4ad032e68",
-    "350951b50a69d885",
-    "357e9177782ecc3c",
-    "38dbf2a325e00447",
+    "3562e14c202b175e",
+    "36675ecb77800621",
     "39f183e81530e932",
+    "3ce926bb905bdbab",
     "4201ca863325375b",
     "43728a9ffe8496a9",
+    "4494adede491b7ee",
     "457299702d1f0ac3",
-    "4579297e9470e217",
     "4688cbe4b3121f8d",
     "46e3257d492f33e6",
     "47300a25c7db91ba",
     "474a5dcbee3ac15c",
     "47be9e4a5b834d6f",
+    "49c8a286d05dc210",
     "4be682896aacf164",
+    "4c56a3e45eb89521",
     "53628fda41834bf4",
     "58208ef0fc7d5303",
     "5a46128d6693b28a",
     "5bb7db15a72317cc",
     "5bdb384eb9cdb210",
-    "5c466bbd35074912",
+    "5d092133a67adf32",
+    "5dadd76714587912",
+    "5e6ed0e56e6f09ef",
     "5fbab7cd8cb075c8",
     "61ee7acb0e1a100f",
-    "624ec66b60150442",
     "6393e4a41c982532",
-    "64615f46f1603a3f",
-    "69ab7f673da2f322",
-    "6f436f9b9cb058c8"
+    "64615f46f1603a3f"
   ],
   "sources": {
     "Antigravity (Fallback)": {
@@ -114,16 +140,16 @@
     "OpenAI Codex": {
       "cache_creation": 0,
       "cache_read": 1458304,
-      "input_tokens": 1607705,
-      "output_tokens": 13527,
+      "input_tokens": 149401,
+      "output_tokens": 7339,
       "reasoning": 6188
     }
   },
   "totals": {
     "cache_creation": 0,
     "cache_read": 4709576,
-    "input_tokens": 1649252,
-    "output_tokens": 31031,
+    "input_tokens": 190948,
+    "output_tokens": 24843,
     "reasoning": 6188
   }
 }

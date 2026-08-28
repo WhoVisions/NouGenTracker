@@ -1,5 +1,5 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-05-09",
   "estimated": {
     "cache_creation": 0,
@@ -11,11 +11,11 @@
   "exact": {
     "cache_creation": 0,
     "cache_read": 47104,
-    "input_tokens": 68892,
-    "output_tokens": 1096,
+    "input_tokens": 21788,
+    "output_tokens": 1039,
     "reasoning": 57
   },
-  "generated_at": "2026-08-08T00:27:57-04:00",
+  "generated_at": "2026-08-28T16:49:39-04:00",
   "generated_by": "claude-cli",
   "invocations": 4,
   "machine": "blade1tb",
@@ -23,33 +23,59 @@
     "gpt-5.5": {
       "cache_creation": 0,
       "cache_read": 47104,
-      "input_tokens": 68892,
-      "output_tokens": 1096,
+      "input_tokens": 21788,
+      "output_tokens": 1039,
       "reasoning": 57
     }
   },
   "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.6837,
+      "distinct_sessions": 1,
+      "peak_context_used_percent": 6.87,
+      "plan_types": [
+        "team"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 2.0,
+          "peak_used_percent": 2.0,
+          "resets_at": 1778350146,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 16.0,
+          "peak_used_percent": 16.0,
+          "resets_at": 1778627570,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 69988,
+      "uncached_input_tokens": 21788
+    }
+  },
   "schema": 3,
   "sketch": [
-    "0cfc5840c0e1d935",
-    "319a3c59919389f6",
-    "61ecfcb9e987c136",
-    "67f2efba8b249955"
+    "6275a7b778ca3b32",
+    "6c708f0a331356a5",
+    "7edb763fc792a305",
+    "a1ca563d64bc91f7"
   ],
   "sources": {
     "OpenAI Codex": {
       "cache_creation": 0,
       "cache_read": 47104,
-      "input_tokens": 68892,
-      "output_tokens": 1096,
+      "input_tokens": 21788,
+      "output_tokens": 1039,
       "reasoning": 57
     }
   },
   "totals": {
     "cache_creation": 0,
     "cache_read": 47104,
-    "input_tokens": 68892,
-    "output_tokens": 1096,
+    "input_tokens": 21788,
+    "output_tokens": 1039,
     "reasoning": 57
   }
 }

@@ -1,5 +1,5 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-05-21",
   "estimated": {
     "cache_creation": 0,
@@ -15,7 +15,7 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-08-08T00:27:57-04:00",
+  "generated_at": "2026-08-28T16:49:39-04:00",
   "generated_by": "claude-cli",
   "invocations": 3452,
   "machine": "blade1tb",
@@ -71,6 +71,7 @@
     }
   },
   "partial": false,
+  "provider_stats": {},
   "schema": 3,
   "sketch": [
     "002144be3e602682",
