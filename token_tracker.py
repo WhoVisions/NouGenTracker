@@ -19,6 +19,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import datetime as _dtm
 
+import pricing_live
+
 
 def _force_utf8_stdio():
     """Windows consoles default to cp1252, which cannot encode this report's glyphs.
@@ -305,6 +307,9 @@ def resolve_model(model_id):
 # impressive one: cache-reads are priced as cache-reads, not as fresh input.
 DOC = "doc"   # first-party documented list price (any vendor)
 EST = "est"
+LIVE = pricing_live.LIVE
+CACHED = pricing_live.CACHED
+FALLBACK_CONST = pricing_live.FALLBACK_CONST
 MODEL_PRICING = {
     # ---- Claude: first-party list prices ----
     "claude-fable-5":             (10.00, 50.00, 1.000, DOC),
@@ -461,10 +466,16 @@ def price_for(model_name, when=None):
     dated = _scheduled_price(key, when)
     if dated is not None:
         return dated
-    exact = MODEL_PRICING.get(key)
-    if exact is not None:
-        return exact
-    return _family_price(key)
+    if key in PRICE_SCHEDULE:
+        exact = MODEL_PRICING.get(key)
+        if exact is not None:
+            return exact
+    return pricing_live.resolve_price(
+        key,
+        fallback_pricing=MODEL_PRICING,
+        default_pricing=DEFAULT_PRICING,
+        variant_suffixes=_VARIANT_SUFFIXES,
+    )
 
 
 #: Suffixes a provider appends to a model id without changing the model being
@@ -498,7 +509,10 @@ def _family_price(key):
     parts = key.split("-")
     while len(parts) > 1 and parts[-1].lower() in _VARIANT_SUFFIXES:
         parts = parts[:-1]
-        found = MODEL_PRICING.get("-".join(parts))
+        found = pricing_live.resolve_exact_price(
+            "-".join(parts),
+            fallback_pricing=MODEL_PRICING,
+        )
         if found is not None:
             inp, out, cache, _source = found
             return (inp, out, cache, EST)
