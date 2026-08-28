@@ -78,6 +78,47 @@ def test_rollup_skips_records_with_no_usable_timestamp():
     assert fd.rollup([{"timestamp": None, "input_tokens": 5}]) == {}
 
 
+def test_rollup_adds_privacy_safe_openai_stats_without_double_counting_reasoning():
+    invs = [
+        dict(_inv("2026-07-30", source="OpenAI Codex", model="gpt",
+                  input_tokens=100, cache_read=80, output_tokens=20,
+                  reasoning=7), session_id="private-session-a",
+             source_file="private-rollout-a.jsonl", openai_total_tokens=120,
+             openai_uncached_input_tokens=20,
+             openai_context_input_tokens=100, openai_context_window=200,
+             openai_plan_type="plus", openai_primary_used_percent=30,
+             openai_primary_window_minutes=300,
+             openai_primary_resets_at=123),
+        dict(_inv("2026-07-30", source="OpenAI Codex", model="gpt",
+                  input_tokens=50, cache_read=50, output_tokens=10),
+             session_id="private-session-b", openai_total_tokens=60,
+             openai_context_input_tokens=150, openai_context_window=200,
+             openai_plan_type="plus", openai_primary_used_percent=20,
+             openai_primary_window_minutes=300,
+             openai_primary_resets_at=456),
+    ]
+    stats = fd.rollup(invs)["2026-07-30"]["provider_stats"]["OpenAI Codex"]
+    assert stats["distinct_sessions"] == 2
+    assert stats["total_tokens"] == 180
+    assert stats["uncached_input_tokens"] == 20
+    assert stats["cache_hit_ratio"] == pytest.approx(130 / 150, abs=0.0001)
+    assert stats["peak_context_used_percent"] == 75.0
+    assert stats["plan_types"] == ["plus"]
+    assert stats["rate_limits"]["primary"]["peak_used_percent"] == 30.0
+    blob = json.dumps(stats)
+    assert "private-session" not in blob
+    assert "private-rollout" not in blob
+
+
+def test_rollup_openai_stats_are_zero_safe():
+    stats = fd.rollup([
+        dict(_inv("2026-07-30", source="OpenAI Codex", model="gpt"),
+             session_id="s")
+    ])["2026-07-30"]["provider_stats"]["OpenAI Codex"]
+    assert stats["cache_hit_ratio"] == 0.0
+    assert stats["peak_context_used_percent"] == 0.0
+
+
 # --- export ---------------------------------------------------------------
 
 def test_export_is_idempotent_per_day(tmp_path):

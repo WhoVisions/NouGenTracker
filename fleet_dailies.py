@@ -444,6 +444,7 @@ def rollup(invocations: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
              "models": defaultdict(lambda: defaultdict(int)),
              "exact": defaultdict(int),
              "estimated": defaultdict(int),
+             "provider_stats": {},
              "fingerprints": [],
              "invocations": 0},
         )
@@ -457,8 +458,89 @@ def rollup(invocations: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             bucket["sources"][source][field] += value
             bucket["models"][model][field] += value
             bucket[confidence][field] += value
+        if source == "OpenAI Codex":
+            stats = bucket["provider_stats"].setdefault(
+                source,
+                {"session_ids": set(), "plan_types": set(),
+                 "uncached_input_tokens": 0, "total_tokens": 0,
+                 "input_tokens": 0, "cached_input_tokens": 0,
+                 "peak_context_used_percent": 0.0,
+                 "rate_limits": {}},
+            )
+            session_id = inv.get("session_id")
+            if session_id:
+                stats["session_ids"].add(str(session_id))
+            plan_type = inv.get("openai_plan_type")
+            if plan_type:
+                stats["plan_types"].add(str(plan_type))
+            input_tokens = int(inv.get("input_tokens") or 0)
+            cached_input = int(inv.get("cache_read") or 0)
+            stats["input_tokens"] += input_tokens
+            stats["cached_input_tokens"] += cached_input
+            stats["uncached_input_tokens"] += int(
+                inv.get("openai_uncached_input_tokens")
+                if inv.get("openai_uncached_input_tokens") is not None
+                else max(0, input_tokens - cached_input))
+            # Codex reasoning is a subset of output_tokens, so it must not be
+            # added again when deriving total_tokens.
+            stats["total_tokens"] += int(
+                inv.get("openai_total_tokens")
+                if inv.get("openai_total_tokens") is not None
+                else input_tokens + int(inv.get("output_tokens") or 0))
+            context_window = int(inv.get("openai_context_window") or 0)
+            if context_window > 0:
+                context_input = int(
+                    inv.get("openai_context_input_tokens") or input_tokens)
+                stats["peak_context_used_percent"] = max(
+                    stats["peak_context_used_percent"],
+                    100.0 * context_input / context_window)
+            for limit_name in ("primary", "secondary"):
+                used = inv.get(f"openai_{limit_name}_used_percent")
+                if used is None:
+                    continue
+                sample = stats["rate_limits"].setdefault(
+                    limit_name,
+                    {"peak_used_percent": 0.0, "latest_used_percent": 0.0,
+                     "window_minutes": None, "resets_at": None,
+                     "_latest_at": ""},
+                )
+                sample["peak_used_percent"] = max(
+                    sample["peak_used_percent"], float(used))
+                sampled_at = str(inv.get("timestamp") or "")
+                if sampled_at >= sample["_latest_at"]:
+                    sample["_latest_at"] = sampled_at
+                    sample["latest_used_percent"] = float(used)
+                    sample["window_minutes"] = inv.get(
+                        f"openai_{limit_name}_window_minutes")
+                    sample["resets_at"] = inv.get(
+                        f"openai_{limit_name}_resets_at")
         bucket["fingerprints"].append(fingerprint(inv))
         bucket["invocations"] += 1
+
+    def public_provider_stats(raw: Dict[str, Any]) -> Dict[str, Any]:
+        """Freeze privacy-safe provider aggregates; discard identifiers."""
+        public = {}
+        for provider, stats in raw.items():
+            input_tokens = int(stats["input_tokens"])
+            limits = {}
+            for name, sample in stats["rate_limits"].items():
+                limits[name] = {
+                    key: value for key, value in sample.items()
+                    if not key.startswith("_")
+                }
+            public[provider] = {
+                "distinct_sessions": len(stats["session_ids"]),
+                "total_tokens": int(stats["total_tokens"]),
+                "uncached_input_tokens": int(stats["uncached_input_tokens"]),
+                "cache_hit_ratio": round(
+                    stats["cached_input_tokens"] / input_tokens, 4)
+                    if input_tokens else 0.0,
+                "peak_context_used_percent": round(
+                    stats["peak_context_used_percent"], 2),
+                "plan_types": sorted(stats["plan_types"]),
+                "rate_limits": limits,
+            }
+        return public
 
     # defaultdicts serialise fine but compare badly in tests; freeze them.
     return {
@@ -467,6 +549,7 @@ def rollup(invocations: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             "models": {m: dict(f) for m, f in b["models"].items()},
             "exact": {f: b["exact"].get(f, 0) for f in TOKEN_FIELDS},
             "estimated": {f: b["estimated"].get(f, 0) for f in TOKEN_FIELDS},
+            "provider_stats": public_provider_stats(b["provider_stats"]),
             "sketch": minhash(b["fingerprints"]),
             "invocations": b["invocations"],
         }
@@ -518,6 +601,7 @@ def export_days(
             "sketch": [f"{v:016x}" for v in bucket["sketch"]],
             "sources": bucket["sources"],
             "models": bucket["models"],
+            "provider_stats": bucket["provider_stats"],
         }
         path = root / f"{day}.json"
         # Replace, never append: one file per (machine, day) is what makes a
