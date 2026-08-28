@@ -55,6 +55,8 @@ COMPARE_N = None
 LANES = False
 EXPORT = False
 PUBLISH = False
+VALIDATE = False
+FIX = False
 FLEET = False
 INSTALL_HOOKS = False
 
@@ -111,6 +113,14 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
                          help="totals across every machine that has published dailies")
     _parser.add_argument("--install-hooks", action="store_true",
                          help="point this clone at .githooks (per-clone; cannot be committed)")
+    _parser.add_argument("--validate", "--backpedal", dest="validate", action="store_true",
+                         help="backpedal: walk this machine's dailies newest-first and validate "
+                              "(parse errors, negative totals, stale counting-code cohorts, "
+                              "calendar gaps, dirty-tree stamp warning); exit 1 on defects")
+    _parser.add_argument("--fix", action="store_true",
+                         help="with --validate: archive this machine's stale-cohort days to "
+                              "archive-<counter>/, re-export their window, re-validate. "
+                              "Refuses to run from a dirty tree (the stamp would be dirty).")
     _a, _ = _parser.parse_known_args()
 
     MONTH = _a.month
@@ -121,6 +131,8 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
     LANES = _a.lanes
     EXPORT = _a.export or _a.publish
     PUBLISH = _a.publish
+    VALIDATE = _a.validate
+    FIX = _a.fix
     FLEET = _a.fleet
     INSTALL_HOOKS = _a.install_hooks
 
@@ -2673,12 +2685,117 @@ if __name__ == "__main__" and LANES:
 # Everything above answers "what did this box spend?". These three flags carry
 # that answer to the other boxes over git, and fold theirs back in.
 
-if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET):
+def backpedal_validate(_fd, machine=None):
+    """Walk this machine's dailies newest-first and validate them.
+
+    Returns a dict of findings. Defects are parse errors, negative totals and
+    stale-cohort days; calendar gaps are reported but are NOT defects (an idle
+    day exports nothing). The dirty flag warns that any export made now would
+    carry a +dirty stamp that can never rank as the current cohort.
+    """
+    from pathlib import Path as _Path
+    import re as _re
+    import datetime as _dt
+
+    machine = machine or _fd.resolve_machine()
+    base = _Path("dailies") / machine
+    files = sorted((p for p in base.glob("*.json")), reverse=True)
+    parse_bad, negative, days = [], [], set()
+
+    def _nums(o):
+        if isinstance(o, dict):
+            for v in o.values():
+                yield from _nums(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from _nums(v)
+        elif isinstance(o, (int, float)) and not isinstance(o, bool):
+            yield o
+
+    for p in files:
+        m = _re.search(r"(\d{4}-\d{2}-\d{2})", p.stem)
+        if m:
+            days.add(m.group(1))
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            parse_bad.append((p.name, str(e)[:80]))
+            continue
+        if any(v < 0 for v in _nums(data)):
+            negative.append(p.name)
+
+    gaps = []
+    if days:
+        d = _dt.date.fromisoformat(min(days))
+        end = _dt.date.fromisoformat(max(days))
+        while d <= end:
+            if d.isoformat() not in days:
+                gaps.append(d.isoformat())
+            d += _dt.timedelta(days=1)
+
+    counters = _fd.aggregate(_fd.load_fleet())["counters"]
+    stale = [(m2, day, cnt) for m2, day, cnt in counters["stale"] if m2 == machine]
+    dirty = counters["local"].endswith(_fd.DIRTY_SUFFIX)
+    return {
+        "machine": machine, "base": base, "files": len(files),
+        "range": (min(days), max(days)) if days else (None, None),
+        "parse_bad": parse_bad, "negative": negative, "gaps": gaps,
+        "stale": stale, "dirty": dirty,
+    }
+
+
+def backpedal_report(r):
+    lo, hi = r["range"]
+    print("=" * 70)
+    print(f"BACKPEDAL — {r['machine']}: {r['files']} day file(s) {lo}..{hi}")
+    print("=" * 70)
+    print(f"  unparseable files:     {len(r['parse_bad'])}"
+          + (f"  {r['parse_bad'][:3]}" if r["parse_bad"] else ""))
+    print(f"  negative totals:       {len(r['negative'])}"
+          + (f"  {r['negative'][:3]}" if r["negative"] else ""))
+    print(f"  stale-cohort days:     {len(r['stale'])}"
+          + (f"  {[d for _, d, _ in r['stale'][:6]]}" if r["stale"] else ""))
+    print(f"  calendar days absent:  {len(r['gaps'])}  (idle or unexported — not a defect)")
+    if r["dirty"]:
+        print("  ⚠ working tree is dirty: exports made now get a +dirty stamp that can")
+        print("    never rank as the current cohort. Commit before exporting.")
+    defects = bool(r["parse_bad"] or r["negative"] or r["stale"])
+    print(f"  verdict: {'DEFECTS FOUND' if defects else 'clean'}")
+    return defects
+
+
+if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET or VALIDATE):
     import fleet_dailies as _fd
 
     if INSTALL_HOOKS:
         _ok, _msg = _fd.install_hooks()
         print(f"{'✓' if _ok else '✗'} {_msg}")
+
+    if VALIDATE:
+        _r = backpedal_validate(_fd)
+        _defects = backpedal_report(_r)
+        if FIX and _r["stale"]:
+            if _r["dirty"]:
+                print("  --fix refused: commit the working tree first (dirty stamp).")
+                sys.exit(1)
+            from pathlib import Path as _Path
+            _stale_days = sorted(d for _, d, _ in _r["stale"])
+            _counter = _r["stale"][0][2][:12]
+            _arch = _r["base"] / f"archive-{_counter}"
+            _arch.mkdir(exist_ok=True)
+            _moved = 0
+            for _day in _stale_days:
+                for _f in _r["base"].glob(f"*{_day}*"):
+                    if _f.is_file():
+                        _f.rename(_arch / _f.name)
+                        _moved += 1
+            print(f"  archived {_moved} stale file(s) -> {_arch}")
+            _cmd = [sys.executable, os.path.abspath(__file__),
+                    "--start", _stale_days[0], "--end", _stale_days[-1], "--export"]
+            print(f"  re-exporting {_stale_days[0]}..{_stale_days[-1]} with current code...")
+            subprocess.run(_cmd, check=False)
+            _defects = backpedal_report(backpedal_validate(_fd))
+        sys.exit(1 if _defects else 0)
 
     if EXPORT:
         _paths = _fd.export_days(ALL_INVOCATIONS)
