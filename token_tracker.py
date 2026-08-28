@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 import datetime as _dtm
 
 import pricing_live
+from pricing_live import calculate_cost, round_to_cents
 
 
 def _force_utf8_stdio():
@@ -463,18 +464,13 @@ def price_for(model_name, when=None):
     # Free lanes: local Ollama/Gemma + OpenRouter ':free' routes.
     if key.endswith(":free") or key in FREE_LOCAL_MODELS:
         return (0.0, 0.0, 0.0, DOC)
-    dated = _scheduled_price(key, when)
-    if dated is not None:
-        return dated
-    if key in PRICE_SCHEDULE:
-        exact = MODEL_PRICING.get(key)
-        if exact is not None:
-            return exact
     return pricing_live.resolve_price(
         key,
+        when=when,
         fallback_pricing=MODEL_PRICING,
         default_pricing=DEFAULT_PRICING,
         variant_suffixes=_VARIANT_SUFFIXES,
+        price_schedule=PRICE_SCHEDULE,
     )
 
 
@@ -524,16 +520,21 @@ def model_bill(model_name, d, when=None):
 
     Cache-reads are billed at their discounted rate, cache-creation at 1.25x
     input, and reasoning at the output rate — the way a real invoice prices
-    them. Returns (cost_usd, source_tag).
+    them. Returns (cost_usd, source_tag). Evaluated with decimal.Decimal end-to-end.
     """
     inp, out, cache_read, src = price_for(model_name, when)
-    cost = (
-        d.get("input_tokens", 0) * inp
-        + d.get("cache_creation_input_tokens", 0) * inp * 1.25
-        + d.get("cache_read_input_tokens", 0) * cache_read
-        + (d.get("output_tokens", 0) + d.get("reasoning_tokens", 0)) * out
-    ) / 1_000_000
-    return cost, src
+    cost = calculate_cost(
+        input_tokens=d.get("input_tokens", 0),
+        cache_write_tokens=d.get("cache_creation_input_tokens", 0) or d.get("cache_write", 0),
+        cache_read_tokens=d.get("cache_read_input_tokens", 0) or d.get("cache_read", 0),
+        output_tokens=d.get("output_tokens", 0),
+        reasoning_tokens=d.get("reasoning_tokens", 0) or d.get("reasoning", 0),
+        inp_rate=inp,
+        out_rate=out,
+        cache_read_rate=cache_read,
+    )
+    return float(cost), src
+
 
 
 def fold_openai_usage(usage):
@@ -1793,298 +1794,309 @@ def print_route_recommendations(invocations):
 
 
 # --- Main Reporting ---
-print("\n======================================================================")
-if RANGE_START or RANGE_END:
-    print(f"Token usage monitor — range {CUTOFF:%Y-%m-%d} -> {LIMIT_UPPER - timedelta(days=1):%Y-%m-%d}")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {LIMIT_UPPER:%Y-%m-%d %H:%M} {NOW:%Z}")
-elif MONTH:
-    print(f"Token usage monitor — Month: {MONTH}")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {LIMIT_UPPER:%Y-%m-%d %H:%M} {NOW:%Z}")
-elif COMPARE_N:
-    print(f"Token usage monitor — compare last {COMPARE_N}d vs prior {COMPARE_N}d (collecting {DAYS} days)")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {NOW:%Y-%m-%d %H:%M} {NOW:%Z}")
-else:
-    print(f"Token usage monitor — last {DAYS} day(s)")
-    print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {NOW:%Y-%m-%d %H:%M} {NOW:%Z}")
-print("======================================================================\n")
-
-# 1. Claude Code report
-c_day, c_model, c_totals, c_files, c_records = parse_claude()
-print("--- Claude Code ---")
-print(f"Transcripts scanned: {c_files}   Usage records: {c_records}\n")
-hdr = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr)
-print("-" * len(hdr))
-for day in sorted(c_day):
-    i, o, cc, cr, rt = cols(c_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr))
-ti, to, tcc, tcr, trt = cols(c_totals)
-print(f"{'TOTAL':<12}{fmt(ti):>14}{fmt(to):>14}{fmt(tcr):>16}{fmt(trt):>14}\n")
-
-# 2. Antigravity report
-a_day, a_model, a_totals, a_files, a_records, active_cnt, rpc_cnt, est_cnt = parse_antigravity()
-print("--- Google Antigravity (Hybrid RPC & Estimation) [! partial - Antigravity retention starts ~2026-05-19; pre-May encrypted] ---")
-print(f"Sessions scanned: {a_files} ({active_cnt} active via RPC + {a_files - active_cnt} fallback from disk)")
-print(f"Invocations tracked: {a_records} ({rpc_cnt} exact via RPC + {est_cnt} estimated fallback)\n")
-hdr_ag = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_ag)
-print("-" * len(hdr_ag))
-for day in sorted(a_day):
-    i, o, cc, cr, rt = cols(a_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_ag))
-tai, tao, tacc, tacr, tart = cols(a_totals)
-print(f"{'TOTAL':<12}{fmt(tai):>14}{fmt(tao):>14}{fmt(tacr):>16}{fmt(tart):>14}\n")
-compute_and_print_split([inv for inv in ALL_INVOCATIONS if inv["source"].startswith("Antigravity")], "Antigravity")
-
-# 3. Codex report
-cx_day, cx_model, cx_totals, cx_files, cx_records = parse_codex()
-print("--- OpenAI Codex (Granular Rollout Parsing) ---")
-print(f"Sessions scanned: {cx_files}   Usage events: {cx_records}\n")
-hdr_cx = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_cx)
-print("-" * len(hdr_cx))
-for day in sorted(cx_day):
-    i, o, cc, cr, rt = cols(cx_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_cx))
-txi, txo, txcc, txcr, txrt = cols(cx_totals)
-print(f"{'TOTAL':<12}{fmt(txi):>14}{fmt(txo):>14}{fmt(txcr):>16}{fmt(txrt):>14}")
-# Cross-check our rollout parse against Codex's OWN native counter. Compare like
-# with like: Codex's tokens_used excludes cache-reads, so validate against our
-# non-cache billable tokens (input w/CC + output + reasoning), and note cache
-# separately rather than inflating the delta.
-cx_nthreads, cx_native = codex_native_total()
-cx_billable = txi + txo + txrt
-if cx_native:
-    delta = (cx_billable - cx_native) / cx_native * 100
-    print(f"  cross-check: Codex native (threads.tokens_used) {fmt(cx_native)} across {cx_nthreads} threads "
-          f"| our billable (in+out+reasoning, no cache) {fmt(cx_billable)} | delta {delta:+.0f}% "
-          f"(+{fmt(txcr)} cache-read tracked separately)")
-print()
-
-# 3b. Gemini CLI report (Hybrid Exact & Estimation; pre-May fills here)
-gc_day, gc_model, gc_totals, gc_files, gc_records, gc_exact, gc_est = parse_gemini_cli()
-print("--- Gemini CLI (Hybrid Exact & Estimation) ---")
-print(f"Sessions scanned: {gc_files}   Invocations tracked: {gc_records} ({gc_exact} exact + {gc_est} estimated)\n")
-hdr_gc = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_gc)
-print("-" * len(hdr_gc))
-for day in sorted(gc_day):
-    i, o, cc, cr, rt = cols(gc_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_gc))
-tgi, tgo, tgcc, tgcr, tgrt = cols(gc_totals)
-print(f"{'TOTAL':<12}{fmt(tgi):>14}{fmt(tgo):>14}{fmt(tgcr):>16}{fmt(tgrt):>14}\n")
-compute_and_print_split([inv for inv in ALL_INVOCATIONS if inv["source"] == "Gemini CLI"], "Gemini CLI")
-
-# 3d. Fleet Usage Ledger (forward, exact: local Ollama/Gemma, OpenRouter, HF)
-fl_day, fl_model, fl_totals, fl_records = parse_fleet_usage()
-print("--- Fleet Usage Ledger (Local Ollama/Gemma + OpenRouter + HF) ---")
-print(f"Invocations tracked: {fl_records} (exact, from each lane's API response)\n")
-hdr_fl = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
-print(hdr_fl)
-print("-" * len(hdr_fl))
-for day in sorted(fl_day):
-    i, o, cc, cr, rt = cols(fl_day[day])
-    print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
-print("-" * len(hdr_fl))
-tfi, tfo, tfcc, tfcr, tfrt = cols(fl_totals)
-print(f"{'TOTAL':<12}{fmt(tfi):>14}{fmt(tfo):>14}{fmt(tfcr):>16}{fmt(tfrt):>14}\n")
-
-# 4. Model Breakdown
-all_models = defaultdict(lambda: defaultdict(int))
-for m, d in c_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in a_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in cx_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in gc_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-for m, d in fl_model.items():
-    for k, v in d.items():
-        all_models[m][k] += v
-
-# Robustness: normalize any None/empty model name across every record so the
-# cross-source aggregates (model breakdown, blended split, cache health, top
-# hogs, route recs) can sort/price model keys without crashing on None.
-for _inv in ALL_INVOCATIONS:
-    if not _inv.get("model"):
-        _inv["model"] = "(unknown)"
-
-# Same guard for the pre-aggregated model breakdown dict.
-if None in all_models:
-    _none_d = all_models.pop(None)
-    for _k, _v in _none_d.items():
-        all_models["(unknown)"][_k] += _v
-
-if all_models:
-    print("--- By Model Breakdown ---")
-    mw = max(len(str(m)) for m in all_models)
-    grand_total_tokens = 0
-    grand_total_cost = 0.0
-    grand_total_cold = 0.0
-    total_cache_reads = 0
-    used_estimate = False
-    for model in sorted(all_models, key=lambda m: -sum(all_models[m].values())):
-        i, o, cc, cr, rt = cols(all_models[model])
-        total = i + o + cc + cr + rt
-        grand_total_tokens += total
-        total_cache_reads += cr
-        cost, src = model_bill(model, all_models[model])
-        grand_total_cost += cost
-        # Cold-boot: every input-side token (input + cache-creation + cache-read)
-        # charged at full fresh-input rate; reasoning billed as output.
-        inp_rate, out_rate, _crr, _s = price_for(model)
-        grand_total_cold += ((i + cc + cr) * inp_rate + (o + rt) * out_rate) / 1_000_000
-        if src == EST:
-            used_estimate = True
-        tag = "~" if src == EST else " "
-        print(f"  {model:<{mw}}  total {fmt(total):>16}   "
-              f"(in {fmt(i + cc)}, out {fmt(o)}, cache-read {fmt(cr)}, reasoning {fmt(rt)})  {tag}${cost:,.2f}")
-
-    # --- Honest API-equivalent shadow bill --------------------------------------
-    # What these tokens WOULD have cost at first-party API list prices, with
-    # cache-reads priced as cache-reads (not as fresh input) and reasoning as
-    # output. This is a hypothetical reference point, NOT money saved: on flat-
-    # rate subscriptions this volume was never going to be bought at API rates,
-    # so there is no "arbitrage" sum being pocketed. Naive (all-tokens x flat-
-    # rate) math overstates this several-fold because cache-reads dominate the
-    # token count but bill at ~10% of input.
-    #
-    # Set AI_MONTHLY_SUBSCRIPTION_USD to print your real spend alongside it.
-    sub_cost = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
-    cache_share = (total_cache_reads / grand_total_tokens * 100) if grand_total_tokens else 0
-
+def run_cli_report():
     print("\n======================================================================")
-    print("API-EQUIVALENT SHADOW BILL  (hypothetical reference, NOT realized savings)")
-    print("======================================================================")
-    print(f"Realistic cost (cache-reads billed as cache): ${grand_total_cost:,.2f}")
-    print(f"COLD-BOOT cost (no cache, every token fresh): ${grand_total_cold:,.2f}")
-    print(f"What caching saved vs cold-boot:              ${grand_total_cold - grand_total_cost:,.2f}")
-    if used_estimate:
-        print("  ~ = model priced from an estimate, not a first-party doc")
-    print(f"Cache-reads as share of all tokens:         {cache_share:.1f}%  "
-          f"(billed ~10% of input - why naive math inflates)")
-    if sub_cost > 0:
-        print(f"Your actual subscription spend:             ${sub_cost:,.2f}")
-    print("----------------------------------------------------------------------")
-    print("This is the price you DIDN'T pay by using flat-rate plans, not a sum")
-    print("you earned. Treat it as a usage gauge, not a savings account.")
+    if RANGE_START or RANGE_END:
+        print(f"Token usage monitor — range {CUTOFF:%Y-%m-%d} -> {LIMIT_UPPER - timedelta(days=1):%Y-%m-%d}")
+        print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {LIMIT_UPPER:%Y-%m-%d %H:%M} {NOW:%Z}")
+    elif MONTH:
+        print(f"Token usage monitor — Month: {MONTH}")
+        print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {LIMIT_UPPER:%Y-%m-%d %H:%M} {NOW:%Z}")
+    elif COMPARE_N:
+        print(f"Token usage monitor — compare last {COMPARE_N}d vs prior {COMPARE_N}d (collecting {DAYS} days)")
+        print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {NOW:%Y-%m-%d %H:%M} {NOW:%Z}")
+    else:
+        print(f"Token usage monitor — last {DAYS} day(s)")
+        print(f"window: {CUTOFF:%Y-%m-%d %H:%M} -> {NOW:%Y-%m-%d %H:%M} {NOW:%Z}")
     print("======================================================================\n")
-    
-    compute_and_print_split(ALL_INVOCATIONS, "Blended Report")
-    print_cache_health_report(ALL_INVOCATIONS)
-    print_model_class_buckets(ALL_INVOCATIONS)
-    print_top_hogs(ALL_INVOCATIONS)
-    print_route_recommendations(ALL_INVOCATIONS)
-    
-    if BY_PROVIDER:
-        # Group invocations by provider/company
-        provider_stats = defaultdict(lambda: {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_creation": 0,
-            "cache_read": 0,
-            "reasoning": 0,
-            "cost": 0.0,
-            "count": 0
-        })
-        for inv in ALL_INVOCATIONS:
-            source = inv["source"]
-            if "Claude Code" in source:
-                company = "Anthropic (Claude Code)"
-            elif source.startswith("Fleet:"):
-                prov = source.split(":", 1)[1]
-                if "Ollama" in prov:
-                    company = "Local (Ollama/Gemma)"
-                elif "OpenRouter" in prov:
-                    company = "OpenRouter (free)"
-                elif "HF" in prov or "HuggingFace" in prov:
-                    company = "HuggingFace (free)"
-                else:
-                    company = f"Fleet ({prov})"
-            elif "Gemini CLI" in source:
-                company = "Google (Gemini CLI)"
-            elif "Antigravity" in source:
-                company = "Google (Antigravity)"
-            elif "Codex" in source or "OpenAI" in source:
-                company = "OpenAI (Codex)"
-            else:
-                company = "Unknown"
-                
-            it = inv.get("input_tokens", 0)
-            ot = inv.get("output_tokens", 0)
-            cc = inv.get("cache_creation", 0)
-            cr = inv.get("cache_read", 0)
-            rt = inv.get("reasoning", 0)
-            
-            d = {
-                "input_tokens": it,
-                "cache_creation_input_tokens": cc,
-                "cache_read_input_tokens": cr,
-                "output_tokens": ot,
-                "reasoning_tokens": rt
-            }
-            cost, _ = model_bill(inv["model"], d)
-            
-            c_stats = provider_stats[company]
-            c_stats["input_tokens"] += it
-            c_stats["output_tokens"] += ot
-            c_stats["cache_creation"] += cc
-            c_stats["cache_read"] += cr
-            c_stats["reasoning"] += rt
-            c_stats["cost"] += cost
-            c_stats["count"] += 1
-            
-        print("======================================================================")
-        print("BY-PROVIDER SUMMARY REPORT")
-        print("======================================================================")
-        hdr_prov = f"{'Provider/Company':<30}{'Invocations':>12}{'Input (w/CC)':>16}{'Output':>14}{'Cache Read':>16}{'Reasoning':>14}{'Cost':>12}"
-        print(hdr_prov)
-        print("-" * len(hdr_prov))
-        
-        total_inv = 0
-        total_in = 0
-        total_out = 0
-        total_cr = 0
-        total_rt = 0
-        total_cost = 0.0
-        
-        _ordered = ["Anthropic (Claude Code)", "Google (Antigravity)", "Google (Gemini CLI)",
-                    "OpenAI (Codex)", "Local (Ollama/Gemma)", "OpenRouter (free)", "HuggingFace (free)"]
-        _provider_order = _ordered + [c for c in provider_stats if c not in _ordered]
-        for company in _provider_order:
-            if company not in provider_stats:
-                continue
-            c_stats = provider_stats[company]
-            inv_cnt = c_stats["count"]
-            it = c_stats["input_tokens"] + c_stats["cache_creation"]
-            ot = c_stats["output_tokens"]
-            cr = c_stats["cache_read"]
-            rt = c_stats["reasoning"]
-            cost = c_stats["cost"]
-            
-            total_inv += inv_cnt
-            total_in += it
-            total_out += ot
-            total_cr += cr
-            total_rt += rt
-            total_cost += cost
-            
-            print(f"{company:<30}{fmt(inv_cnt):>12}{fmt(it):>16}{fmt(ot):>14}{fmt(cr):>16}{fmt(rt):>14}  ${cost:10.2f}")
-            
-        print("-" * len(hdr_prov))
-        print(f"{'TOTAL':<30}{fmt(total_inv):>12}{fmt(total_in):>16}{fmt(total_out):>14}{fmt(total_cr):>16}{fmt(total_rt):>14}  ${total_cost:10.2f}")
-        print("======================================================================\n")
 
-print()
+    # 1. Claude Code report
+    c_day, c_model, c_totals, c_files, c_records = parse_claude()
+    print("--- Claude Code ---")
+    print(f"Transcripts scanned: {c_files}   Usage records: {c_records}\n")
+    hdr = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
+    print(hdr)
+    print("-" * len(hdr))
+    for day in sorted(c_day):
+        i, o, cc, cr, rt = cols(c_day[day])
+        print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
+    print("-" * len(hdr))
+    ti, to, tcc, tcr, trt = cols(c_totals)
+    print(f"{'TOTAL':<12}{fmt(ti):>14}{fmt(to):>14}{fmt(tcr):>16}{fmt(trt):>14}\n")
+
+    # 2. Antigravity report
+    a_day, a_model, a_totals, a_files, a_records, active_cnt, rpc_cnt, est_cnt = parse_antigravity()
+    print("--- Google Antigravity (Hybrid RPC & Estimation) [! partial - Antigravity retention starts ~2026-05-19; pre-May encrypted] ---")
+    print(f"Sessions scanned: {a_files} ({active_cnt} active via RPC + {a_files - active_cnt} fallback from disk)")
+    print(f"Invocations tracked: {a_records} ({rpc_cnt} exact via RPC + {est_cnt} estimated fallback)\n")
+    hdr_ag = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
+    print(hdr_ag)
+    print("-" * len(hdr_ag))
+    for day in sorted(a_day):
+        i, o, cc, cr, rt = cols(a_day[day])
+        print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
+    print("-" * len(hdr_ag))
+    tai, tao, tacc, tacr, tart = cols(a_totals)
+    print(f"{'TOTAL':<12}{fmt(tai):>14}{fmt(tao):>14}{fmt(tacr):>16}{fmt(tart):>14}\n")
+    compute_and_print_split([inv for inv in ALL_INVOCATIONS if inv["source"].startswith("Antigravity")], "Antigravity")
+
+    # 3. Codex report
+    cx_day, cx_model, cx_totals, cx_files, cx_records = parse_codex()
+    print("--- OpenAI Codex (Granular Rollout Parsing) ---")
+    print(f"Sessions scanned: {cx_files}   Usage events: {cx_records}\n")
+    hdr_cx = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
+    print(hdr_cx)
+    print("-" * len(hdr_cx))
+    for day in sorted(cx_day):
+        i, o, cc, cr, rt = cols(cx_day[day])
+        print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
+    print("-" * len(hdr_cx))
+    txi, txo, txcc, txcr, txrt = cols(cx_totals)
+    print(f"{'TOTAL':<12}{fmt(txi):>14}{fmt(txo):>14}{fmt(txcr):>16}{fmt(txrt):>14}")
+    # Cross-check our rollout parse against Codex's OWN native counter. Compare like
+    # with like: Codex's tokens_used excludes cache-reads, so validate against our
+    # non-cache billable tokens (input w/CC + output + reasoning), and note cache
+    # separately rather than inflating the delta.
+    cx_nthreads, cx_native = codex_native_total()
+    cx_billable = txi + txo + txrt
+    if cx_native:
+        delta = (cx_billable - cx_native) / cx_native * 100
+        print(f"  cross-check: Codex native (threads.tokens_used) {fmt(cx_native)} across {cx_nthreads} threads "
+              f"| our billable (in+out+reasoning, no cache) {fmt(cx_billable)} | delta {delta:+.0f}% "
+              f"(+{fmt(txcr)} cache-read tracked separately)")
+    print()
+
+    # 3b. Gemini CLI report (Hybrid Exact & Estimation; pre-May fills here)
+    gc_day, gc_model, gc_totals, gc_files, gc_records, gc_exact, gc_est = parse_gemini_cli()
+    print("--- Gemini CLI (Hybrid Exact & Estimation) ---")
+    print(f"Sessions scanned: {gc_files}   Invocations tracked: {gc_records} ({gc_exact} exact + {gc_est} estimated)\n")
+    hdr_gc = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
+    print(hdr_gc)
+    print("-" * len(hdr_gc))
+    for day in sorted(gc_day):
+        i, o, cc, cr, rt = cols(gc_day[day])
+        print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
+    print("-" * len(hdr_gc))
+    tgi, tgo, tgcc, tgcr, tgrt = cols(gc_totals)
+    print(f"{'TOTAL':<12}{fmt(tgi):>14}{fmt(tgo):>14}{fmt(tgcr):>16}{fmt(tgrt):>14}\n")
+    compute_and_print_split([inv for inv in ALL_INVOCATIONS if inv["source"] == "Gemini CLI"], "Gemini CLI")
+
+    # 3d. Fleet Usage Ledger (forward, exact: local Ollama/Gemma, OpenRouter, HF)
+    fl_day, fl_model, fl_totals, fl_records = parse_fleet_usage()
+    print("--- Fleet Usage Ledger (Local Ollama/Gemma + OpenRouter + HF) ---")
+    print(f"Invocations tracked: {fl_records} (exact, from each lane's API response)\n")
+    hdr_fl = f"{'Day':<12}{'input':>14}{'output':>14}{'cache-read':>16}{'reasoning':>14}"
+    print(hdr_fl)
+    print("-" * len(hdr_fl))
+    for day in sorted(fl_day):
+        i, o, cc, cr, rt = cols(fl_day[day])
+        print(f"{day:<12}{fmt(i):>14}{fmt(o):>14}{fmt(cr):>16}{fmt(rt):>14}")
+    print("-" * len(hdr_fl))
+    tfi, tfo, tfcc, tfcr, tfrt = cols(fl_totals)
+    print(f"{'TOTAL':<12}{fmt(tfi):>14}{fmt(tfo):>14}{fmt(tfcr):>16}{fmt(tfrt):>14}\n")
+
+    # 4. Model Breakdown
+    all_models = defaultdict(lambda: defaultdict(int))
+    for m, d in c_model.items():
+        for k, v in d.items():
+            all_models[m][k] += v
+    for m, d in a_model.items():
+        for k, v in d.items():
+            all_models[m][k] += v
+    for m, d in cx_model.items():
+        for k, v in d.items():
+            all_models[m][k] += v
+    for m, d in gc_model.items():
+        for k, v in d.items():
+            all_models[m][k] += v
+    for m, d in fl_model.items():
+        for k, v in d.items():
+            all_models[m][k] += v
+
+    # Robustness: normalize any None/empty model name across every record so the
+    # cross-source aggregates (model breakdown, blended split, cache health, top
+    # hogs, route recs) can sort/price model keys without crashing on None.
+    for _inv in ALL_INVOCATIONS:
+        if not _inv.get("model"):
+            _inv["model"] = "(unknown)"
+
+    # Same guard for the pre-aggregated model breakdown dict.
+    if None in all_models:
+        _none_d = all_models.pop(None)
+        for _k, _v in _none_d.items():
+            all_models["(unknown)"][_k] += _v
+
+    if all_models:
+        print("--- By Model Breakdown ---")
+        mw = max(len(str(m)) for m in all_models)
+        grand_total_tokens = 0
+        grand_total_cost = 0.0
+        grand_total_cold = 0.0
+        total_cache_reads = 0
+        used_estimate = False
+        for model in sorted(all_models, key=lambda m: -sum(all_models[m].values())):
+            i, o, cc, cr, rt = cols(all_models[model])
+            total = i + o + cc + cr + rt
+            grand_total_tokens += total
+            total_cache_reads += cr
+            cost, src = model_bill(model, all_models[model])
+            grand_total_cost += cost
+            # Cold-boot: every input-side token (input + cache-creation + cache-read)
+            # charged at full fresh-input rate; reasoning billed as output.
+            inp_rate, out_rate, _crr, _s = price_for(model)
+            cold_cost = calculate_cost(
+                input_tokens=(i + cc + cr),
+                output_tokens=(o + rt),
+                inp_rate=inp_rate,
+                out_rate=out_rate,
+            )
+            grand_total_cold += float(cold_cost)
+            if src == EST:
+                used_estimate = True
+            tag = "~" if src == EST else " "
+            print(f"  {model:<{mw}}  total {fmt(total):>16}   "
+                  f"(in {fmt(i + cc)}, out {fmt(o)}, cache-read {fmt(cr)}, reasoning {fmt(rt)})  {tag}${cost:,.2f}")
+
+        # --- Honest API-equivalent shadow bill --------------------------------------
+        # What these tokens WOULD have cost at first-party API list prices, with
+        # cache-reads priced as cache-reads (not as fresh input) and reasoning as
+        # output. This is a hypothetical reference point, NOT money saved: on flat-
+        # rate subscriptions this volume was never going to be bought at API rates,
+        # so there is no "arbitrage" sum being pocketed. Naive (all-tokens x flat-
+        # rate) math overstates this several-fold because cache-reads dominate the
+        # token count but bill at ~10% of input.
+        #
+        # Set AI_MONTHLY_SUBSCRIPTION_USD to print your real spend alongside it.
+        sub_cost = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
+        cache_share = (total_cache_reads / grand_total_tokens * 100) if grand_total_tokens else 0
+
+        print("\n======================================================================")
+        print("API-EQUIVALENT SHADOW BILL  (hypothetical reference, NOT realized savings)")
+        print("======================================================================")
+        print(f"Realistic cost (cache-reads billed as cache): ${grand_total_cost:,.2f}")
+        print(f"COLD-BOOT cost (no cache, every token fresh): ${grand_total_cold:,.2f}")
+        print(f"What caching saved vs cold-boot:              ${grand_total_cold - grand_total_cost:,.2f}")
+        if used_estimate:
+            print("  ~ = model priced from an estimate, not a first-party doc")
+        print(f"Cache-reads as share of all tokens:         {cache_share:.1f}%  "
+              f"(billed ~10% of input - why naive math inflates)")
+        if sub_cost > 0:
+            print(f"Your actual subscription spend:             ${sub_cost:,.2f}")
+        print("----------------------------------------------------------------------")
+        print("This is the price you DIDN'T pay by using flat-rate plans, not a sum")
+        print("you earned. Treat it as a usage gauge, not a savings account.")
+        print("======================================================================\n")
+    
+        compute_and_print_split(ALL_INVOCATIONS, "Blended Report")
+        print_cache_health_report(ALL_INVOCATIONS)
+        print_model_class_buckets(ALL_INVOCATIONS)
+        print_top_hogs(ALL_INVOCATIONS)
+        print_route_recommendations(ALL_INVOCATIONS)
+    
+        if BY_PROVIDER:
+            # Group invocations by provider/company
+            provider_stats = defaultdict(lambda: {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation": 0,
+                "cache_read": 0,
+                "reasoning": 0,
+                "cost": 0.0,
+                "count": 0
+            })
+            for inv in ALL_INVOCATIONS:
+                source = inv["source"]
+                if "Claude Code" in source:
+                    company = "Anthropic (Claude Code)"
+                elif source.startswith("Fleet:"):
+                    prov = source.split(":", 1)[1]
+                    if "Ollama" in prov:
+                        company = "Local (Ollama/Gemma)"
+                    elif "OpenRouter" in prov:
+                        company = "OpenRouter (free)"
+                    elif "HF" in prov or "HuggingFace" in prov:
+                        company = "HuggingFace (free)"
+                    else:
+                        company = f"Fleet ({prov})"
+                elif "Gemini CLI" in source:
+                    company = "Google (Gemini CLI)"
+                elif "Antigravity" in source:
+                    company = "Google (Antigravity)"
+                elif "Codex" in source or "OpenAI" in source:
+                    company = "OpenAI (Codex)"
+                else:
+                    company = "Unknown"
+                
+                it = inv.get("input_tokens", 0)
+                ot = inv.get("output_tokens", 0)
+                cc = inv.get("cache_creation", 0)
+                cr = inv.get("cache_read", 0)
+                rt = inv.get("reasoning", 0)
+            
+                d = {
+                    "input_tokens": it,
+                    "cache_creation_input_tokens": cc,
+                    "cache_read_input_tokens": cr,
+                    "output_tokens": ot,
+                    "reasoning_tokens": rt
+                }
+                cost, _ = model_bill(inv["model"], d)
+            
+                c_stats = provider_stats[company]
+                c_stats["input_tokens"] += it
+                c_stats["output_tokens"] += ot
+                c_stats["cache_creation"] += cc
+                c_stats["cache_read"] += cr
+                c_stats["reasoning"] += rt
+                c_stats["cost"] += cost
+                c_stats["count"] += 1
+            
+            print("======================================================================")
+            print("BY-PROVIDER SUMMARY REPORT")
+            print("======================================================================")
+            hdr_prov = f"{'Provider/Company':<30}{'Invocations':>12}{'Input (w/CC)':>16}{'Output':>14}{'Cache Read':>16}{'Reasoning':>14}{'Cost':>12}"
+            print(hdr_prov)
+            print("-" * len(hdr_prov))
+        
+            total_inv = 0
+            total_in = 0
+            total_out = 0
+            total_cr = 0
+            total_rt = 0
+            total_cost = 0.0
+        
+            _ordered = ["Anthropic (Claude Code)", "Google (Antigravity)", "Google (Gemini CLI)",
+                        "OpenAI (Codex)", "Local (Ollama/Gemma)", "OpenRouter (free)", "HuggingFace (free)"]
+            _provider_order = _ordered + [c for c in provider_stats if c not in _ordered]
+            for company in _provider_order:
+                if company not in provider_stats:
+                    continue
+                c_stats = provider_stats[company]
+                inv_cnt = c_stats["count"]
+                it = c_stats["input_tokens"] + c_stats["cache_creation"]
+                ot = c_stats["output_tokens"]
+                cr = c_stats["cache_read"]
+                rt = c_stats["reasoning"]
+                cost = c_stats["cost"]
+            
+                total_inv += inv_cnt
+                total_in += it
+                total_out += ot
+                total_cr += cr
+                total_rt += rt
+                total_cost += cost
+            
+                print(f"{company:<30}{fmt(inv_cnt):>12}{fmt(it):>16}{fmt(ot):>14}{fmt(cr):>16}{fmt(rt):>14}  ${cost:10.2f}")
+            
+            print("-" * len(hdr_prov))
+            print(f"{'TOTAL':<30}{fmt(total_inv):>12}{fmt(total_in):>16}{fmt(total_out):>14}{fmt(total_cr):>16}{fmt(total_rt):>14}  ${total_cost:10.2f}")
+            print("======================================================================\n")
+
+    print()
+
+if __name__ == "__main__":
+    run_cli_report()
+
 
 
 # =============================================================================

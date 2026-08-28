@@ -185,25 +185,29 @@ def test_ttl_expired_cache_falls_through_to_fetch(clean_resolver_state, monkeypa
         encoding="utf-8",
     )
 
-    # Mock fetch_vendor_pricing to return updated rates
+    # Mock fetch_vendor_pricing to return updated rates. The update stays
+    # within the delta guard (< NOUGEN_PRICING_DELTA_MAX_PCT, default 50%) so
+    # this test exercises TTL fall-through alone; a larger jump is the delta
+    # guard's own test, where the OLD value must answer and the new one is
+    # quarantined.
     def mock_fetch(vendor, timeout_s=None):
         if vendor == "gemini":
-            return ({model: (2.5, 10.0, 0.25)}, "https://ai.google.dev/pricing")
+            return ({model: (1.4, 2.8, 0.14)}, "https://ai.google.dev/pricing")
         return ({}, "")
 
     monkeypatch.setattr(pricing_live, "fetch_vendor_pricing", mock_fetch)
 
     price = pricing_live.resolve_price(model)
-    assert price[0] == 2.5
-    assert price[1] == 10.0
-    assert price[2] == 0.25
+    assert price[0] == 1.4
+    assert price[1] == 2.8
+    assert price[2] == 0.14
     assert price[3] == pricing_live.LIVE
     assert price[3] == "doc-live"
 
     # Verify cache on disk was refreshed
     data = json.loads(clean_resolver_state.read_text(encoding="utf-8"))
     assert model in data["models"]
-    assert data["models"][model] == [2.5, 10.0, 0.25]
+    assert data["models"][model] == [1.4, 2.8, 0.14]
 
 
 def test_fetch_failure_falls_back_to_model_pricing_with_fallback_const(monkeypatch):
