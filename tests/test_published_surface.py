@@ -35,6 +35,7 @@ ALLOWED_TOP_LEVEL = {
     "machine",       # fleet label, e.g. "whoart"
     "models",        # model name -> token counts
     "partial",
+    "provider_stats", # privacy-safe provider aggregates (no session ids)
     "schema",
     "sketch",
     "sources",

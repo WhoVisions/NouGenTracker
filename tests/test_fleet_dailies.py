@@ -101,7 +101,7 @@ def test_rollup_adds_privacy_safe_openai_stats_without_double_counting_reasoning
     assert stats["distinct_sessions"] == 2
     assert stats["total_tokens"] == 180
     assert stats["uncached_input_tokens"] == 20
-    assert stats["cache_hit_ratio"] == pytest.approx(130 / 150, abs=0.0001)
+    assert stats["cache_hit_ratio"] == pytest.approx(130 / 280, abs=0.0001)
     assert stats["peak_context_used_percent"] == 75.0
     assert stats["plan_types"] == ["plus"]
     assert stats["rate_limits"]["primary"]["peak_used_percent"] == 30.0

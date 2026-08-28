@@ -532,9 +532,13 @@ def rollup(invocations: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
                 "distinct_sessions": len(stats["session_ids"]),
                 "total_tokens": int(stats["total_tokens"]),
                 "uncached_input_tokens": int(stats["uncached_input_tokens"]),
+                # OpenAI's cached subtotal is nested inside input_tokens.  The
+                # parser stores fresh input and cache reads as disjoint fields,
+                # so the denominator must restore the raw input whole.
                 "cache_hit_ratio": round(
-                    stats["cached_input_tokens"] / input_tokens, 4)
-                    if input_tokens else 0.0,
+                    stats["cached_input_tokens"]
+                    / (input_tokens + stats["cached_input_tokens"]), 4)
+                    if input_tokens + stats["cached_input_tokens"] else 0.0,
                 "peak_context_used_percent": round(
                     stats["peak_context_used_percent"], 2),
                 "plan_types": sorted(stats["plan_types"]),
