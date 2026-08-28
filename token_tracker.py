@@ -521,6 +521,53 @@ def model_bill(model_name, d, when=None):
     ) / 1_000_000
     return cost, src
 
+
+def fold_openai_usage(usage):
+    """Fold an OpenAI usage block into Anthropic's disjoint-bucket schema.
+
+    OpenAI nests its subtotals: ``cached_input_tokens`` is part of
+    ``input_tokens``, and ``reasoning_output_tokens`` is part of
+    ``output_tokens``. The payload proves it with its own arithmetic --
+    ``input_tokens + output_tokens == total_tokens`` on every row, with cached
+    and reasoning excluded from that sum.
+
+    Anthropic keeps those buckets disjoint, and every total in this file
+    (``i + o + cc + cr + rt``) and every :func:`model_bill` call is written to
+    Anthropic's rules. Folding here, at the parse boundary, means there is one
+    set of rules below this line instead of two.
+
+    Left unfolded, cached input is counted inside ``input_tokens`` and again as
+    ``cache_read`` -- billed at the full input rate AND the cache rate -- while
+    reasoning is billed at the output rate on top of the output tokens it
+    already sits inside. Measured on 2026-08-27: 32.26M phantom tokens, and a
+    97.3% cache hit rate mislabelled as a 49.5% "cold context leak".
+
+    Returns a dict whose ``input_tokens``/``cache_read`` sum back to the raw
+    input, and whose ``output_tokens``/``reasoning`` sum back to the raw output.
+    """
+    raw_input = int(usage.get("input_tokens") or 0)
+    raw_output = int(usage.get("output_tokens") or 0)
+    cache_read = int(usage.get("cached_input_tokens") or 0)
+    reasoning = int(usage.get("reasoning_output_tokens") or 0)
+
+    # Clamp rather than trust: a subtotal larger than the bucket it is nested in
+    # is a schema change, and silently emitting a negative count would corrupt
+    # every downstream sum. Clamping keeps the invariant that the folded parts
+    # never exceed the raw whole.
+    cache_read = min(cache_read, raw_input)
+    reasoning = min(reasoning, raw_output)
+
+    return {
+        "input_tokens": raw_input - cache_read,
+        "output_tokens": raw_output - reasoning,
+        "cache_read": cache_read,
+        "reasoning": reasoning,
+        "total_tokens": int(usage.get("total_tokens") or (raw_input + raw_output)),
+        "raw_input": raw_input,
+        "raw_output": raw_output,
+    }
+
+
 def parse_ts(rec):
     if not rec or not isinstance(rec, dict):
         return None
@@ -1025,10 +1072,17 @@ def parse_codex():
                                 usage = info.get("last_token_usage") or {}
                                 if not usage: continue
                                 
-                                it = int(usage.get("input_tokens") or 0)
-                                ot = int(usage.get("output_tokens") or 0)
-                                cr = int(usage.get("cached_input_tokens") or 0)
-                                rt = int(usage.get("reasoning_output_tokens") or 0)
+                                folded = fold_openai_usage(usage)
+                                it = folded["input_tokens"]
+                                ot = folded["output_tokens"]
+                                cr = folded["cache_read"]
+                                rt = folded["reasoning"]
+                                total = folded["total_tokens"]
+                                raw_input = folded["raw_input"]
+                                context_window = int(info.get("model_context_window") or 0)
+                                rate_limits = payload.get("rate_limits") or {}
+                                primary_limit = rate_limits.get("primary") or {}
+                                secondary_limit = rate_limits.get("secondary") or {}
                                 
                                 ts_str = rec.get("timestamp")
                                 ts = None
@@ -1063,8 +1117,19 @@ def parse_codex():
                                         "cache_read": cr,
                                         "reasoning": rt,
                                         "exact": True,
-                                        "session_id": rollout_path.split(os.sep)[-2] if os.sep in rollout_path else "rollout",
-                                        "source_file": os.path.basename(rollout_path)
+                                        "session_id": os.path.splitext(os.path.basename(rollout_path))[0],
+                                        "source_file": os.path.basename(rollout_path),
+                                        "openai_total_tokens": total,
+                                        "openai_uncached_input_tokens": it,
+                                        "openai_context_input_tokens": raw_input,
+                                        "openai_context_window": context_window,
+                                        "openai_plan_type": rate_limits.get("plan_type"),
+                                        "openai_primary_used_percent": primary_limit.get("used_percent"),
+                                        "openai_primary_window_minutes": primary_limit.get("window_minutes"),
+                                        "openai_primary_resets_at": primary_limit.get("resets_at"),
+                                        "openai_secondary_used_percent": secondary_limit.get("used_percent"),
+                                        "openai_secondary_window_minutes": secondary_limit.get("window_minutes"),
+                                        "openai_secondary_resets_at": secondary_limit.get("resets_at"),
                                     })
                                     records += 1
             except:
