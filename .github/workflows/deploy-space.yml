@@ -3,8 +3,9 @@ name: Publish NouGenTracker dashboard to Hugging Face
 # Publishes the real fleet dashboard to a free STATIC Hugging Face Space. The
 # old job mirrored the whole repository and generated an index of filenames,
 # which made the Space look like a file browser instead of a tracker. Build a
-# small staging directory containing only the rendered dashboard and its
-# provenance, then replace the Space contents through the HTTP API.
+# small staging directory containing the rendered dashboard, its provenance,
+# and the public aggregate dailies consumed by the fleet connector, then
+# replace the Space contents through the HTTP API.
 #
 # One-time setup (repo Settings):
 #   - Secret  HF_TOKEN: Hugging Face token with write access to the Space
@@ -45,6 +46,18 @@ jobs:
               'Live fleet usage rollup published from the canonical NouGenTracker dailies.'
           } > hf-space/README.md
           printf '%s\n' "${GITHUB_SHA}" > hf-space/.deploy_sha
+          # The connector enumerates this tree through the Hub contents API and
+          # reads individual records from the static Space host.  A UI-only
+          # snapshot makes the dashboard look healthy while every tracker_* MCP
+          # call fails with `tracker tree dailies: 404`.
+          mkdir -p hf-space/dailies
+          cp -R dailies/. hf-space/dailies/
+          DAILY_COUNT="$(find hf-space/dailies -type f -name '*.json' | wc -l | tr -d '[:space:]')"
+          if [ "${DAILY_COUNT}" -eq 0 ]; then
+            echo "::error::Refusing to deploy a tracker snapshot without public dailies."
+            exit 1
+          fi
+          echo "Staged ${DAILY_COUNT} public daily records."
           # Render the same dashboard used locally, from the committed dailies.
           python3 fleet_summary.py --days "${DASHBOARD_DAYS:-3650}" \
             --out hf-space/index.html --title "NouGen fleet usage"
@@ -55,6 +68,7 @@ jobs:
               "source_commit": os.environ["GITHUB_SHA"],
               "generated_at": datetime.now(timezone.utc).isoformat(),
               "dashboard": "index.html",
+              "data_root": "dailies",
           }
           with open("hf-space/deploy.json", "w", encoding="utf-8") as fh:
               json.dump(payload, fh, indent=2)
@@ -85,17 +99,21 @@ jobs:
           fi
           HOST="$(echo "$HF_SPACE" | tr '[:upper:]' '[:lower:]' | tr '/_.' '---')"
           URL="https://${HOST}.static.hf.space/.deploy_sha"
+          TREE_URL="https://huggingface.co/api/spaces/${HF_SPACE}/tree/main/dailies"
           echo "Waiting for ${URL} to report ${GITHUB_SHA}..."
           for i in $(seq 1 30); do
             body=$(curl -sS -m 15 -H "Authorization: Bearer ${HF_TOKEN}" "$URL" 2>/dev/null || true)
             if [ "$(echo "$body" | tr -d '[:space:]')" = "${GITHUB_SHA}" ]; then
               DASHBOARD_URL="https://${HOST}.static.hf.space/index.html"
               dashboard=$(curl -sS -m 15 "$DASHBOARD_URL" 2>/dev/null || true)
-              if echo "$dashboard" | grep -q "NouGen fleet usage" && ! echo "$dashboard" | grep -q "index.json"; then
-                echo "Dashboard is serving the new deploy."
+              tree=$(curl -sS -m 15 -H "Authorization: Bearer ${HF_TOKEN}" "$TREE_URL" 2>/dev/null || true)
+              if echo "$dashboard" | grep -q "NouGen fleet usage" \
+                && ! echo "$dashboard" | grep -q "index.json" \
+                && echo "$tree" | grep -q '"type":"directory"'; then
+                echo "Dashboard and dailies tree are serving the new deploy."
                 exit 0
               fi
-              echo "Dashboard body is not live yet; retrying."
+              echo "Dashboard or dailies tree is not live yet; retrying."
             fi
             sleep 10
           done
