@@ -337,3 +337,196 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# --- canonical fleet counter -------------------------------------------------
+#
+# One number, one definition, every surface. The MCP connector's
+# `total_activity/v1` summed four fields off the `exact` bucket only:
+#
+#     input_tokens + output_tokens + cache_read + cache_creation
+#
+# while this module's BUCKET_FIELDS has always counted five (reasoning too)
+# across BOTH the exact and estimated buckets. Same window, same dailies, two
+# irreconcilable headline totals -- for 2026-08-22..2026-08-29 that was
+# 994,889,354 against a true blended 2,158,468,269. v1 was not slightly off,
+# it was missing 53.9% of real throughput: all estimated usage (Antigravity
+# lanes are almost entirely estimated) plus every reasoning token.
+#
+# v2 fixes the contract rather than the arithmetic: it reports the exact and
+# estimated halves separately AND blended, so a consumer can never silently
+# pick the narrow one. Zero must mean measured zero -- a lane with no telemetry
+# is reported as stale, not as a lane that did no work.
+
+CANONICAL_VERSION = "total_activity/v2"
+
+
+def _bucket_split(rec: Dict[str, Any]) -> Tuple[Dict[str, int], Dict[str, int]]:
+    """(exact, estimated) field maps for one daily, zero-filled."""
+    out = []
+    for key in ("exact", "estimated"):
+        src = rec.get(key) or {}
+        out.append({f: int(src.get(f, 0) or 0) for f in BUCKET_FIELDS})
+    return out[0], out[1]
+
+
+def canonical_summary(since: Optional[str] = None,
+                      until: Optional[str] = None,
+                      root: Path = DAILIES,
+                      now: Optional[datetime] = None) -> Dict[str, Any]:
+    """The one fleet throughput object every surface must render.
+
+    `since`/`until` are inclusive YYYY-MM-DD. Omitting both sweeps everything
+    published. Returns a versioned dict; see CANONICAL_VERSION.
+    """
+    now = now or datetime.now(timezone.utc)
+    records = _read_dailies(root)
+    if since:
+        records = [r for r in records if r["date"] >= since]
+    if until:
+        records = [r for r in records if r["date"] <= until]
+
+    lanes: Dict[str, Dict[str, Any]] = {}
+    days_seen: set = set()
+
+    for rec in records:
+        machine = rec["machine"]
+        lane = lanes.setdefault(machine, {
+            "lane": machine,
+            "days": 0,
+            "invocations": 0,
+            "exact": {f: 0 for f in BUCKET_FIELDS},
+            "estimated": {f: 0 for f in BUCKET_FIELDS},
+            "counters": set(),
+            "generated_by": set(),
+            "partial_days": [],
+            "last_export": None,
+        })
+        exact, estimated = _bucket_split(rec)
+        for f in BUCKET_FIELDS:
+            lane["exact"][f] += exact[f]
+            lane["estimated"][f] += estimated[f]
+        lane["days"] += 1
+        lane["invocations"] += int(rec.get("invocations", 0) or 0)
+        days_seen.add(rec["date"])
+        if rec.get("counter"):
+            lane["counters"].add(rec["counter"])
+        if rec.get("generated_by"):
+            lane["generated_by"].add(rec["generated_by"])
+        if rec.get("partial"):
+            lane["partial_days"].append(rec["date"])
+        stamp = rec.get("generated_at")
+        if stamp:
+            try:
+                dt = datetime.fromisoformat(stamp)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if lane["last_export"] is None or dt > lane["last_export"]:
+                    lane["last_export"] = dt
+            except ValueError:
+                pass
+
+    warnings: List[str] = []
+    lane_out: List[Dict[str, Any]] = []
+    tot_exact = {f: 0 for f in BUCKET_FIELDS}
+    tot_est = {f: 0 for f in BUCKET_FIELDS}
+    tot_inv = 0
+
+    # A lane can only be judged stale against the cohort its peers are on;
+    # a lone lane has nothing to be stale against.
+    all_counters = {c for l in lanes.values() for c in l["counters"]}
+
+    for machine in sorted(lanes):
+        lane = lanes[machine]
+        ex_total = sum(lane["exact"].values())
+        es_total = sum(lane["estimated"].values())
+        age_h = None
+        stale = False
+        if lane["last_export"] is not None:
+            age_h = (now - lane["last_export"]).total_seconds() / 3600.0
+            stale = age_h > STALE_HOURS
+        if stale:
+            warnings.append(
+                f"lane {machine} last exported {age_h:.0f}h ago "
+                f"(> {STALE_HOURS:.0f}h): its totals may be incomplete"
+            )
+        if len(all_counters) > 1 and lane["counters"] and lane["counters"] != all_counters:
+            warnings.append(
+                f"lane {machine} is on counting cohort "
+                f"{sorted(lane['counters'])} while the fleet spans "
+                f"{sorted(all_counters)}: MIXED COUNTING, totals are not comparable"
+            )
+        if "unknown-agent" in lane["generated_by"]:
+            warnings.append(
+                f"lane {machine} has dailies with generated_by=unknown-agent: "
+                f"ledger provenance is incomplete"
+            )
+        for f in BUCKET_FIELDS:
+            tot_exact[f] += lane["exact"][f]
+            tot_est[f] += lane["estimated"][f]
+        tot_inv += lane["invocations"]
+        lane_out.append({
+            "lane": machine,
+            "days": lane["days"],
+            "invocations": lane["invocations"],
+            "exact_tokens": ex_total,
+            "estimated_tokens": es_total,
+            "blended_total": ex_total + es_total,
+            "fresh_input": lane["exact"]["input_tokens"] + lane["estimated"]["input_tokens"],
+            "output": lane["exact"]["output_tokens"] + lane["estimated"]["output_tokens"],
+            "cache_read": lane["exact"]["cache_read"] + lane["estimated"]["cache_read"],
+            "cache_creation": lane["exact"]["cache_creation"] + lane["estimated"]["cache_creation"],
+            "reasoning": lane["exact"]["reasoning"] + lane["estimated"]["reasoning"],
+            "counters": sorted(lane["counters"]),
+            "generated_by": sorted(lane["generated_by"]),
+            "partial_days": sorted(lane["partial_days"]),
+            "last_export": lane["last_export"].isoformat() if lane["last_export"] else None,
+            "age_hours": round(age_h, 1) if age_h is not None else None,
+            "stale": stale,
+        })
+
+    exact_total = sum(tot_exact.values())
+    est_total = sum(tot_est.values())
+    if not lane_out:
+        warnings.append("no dailies matched this window: zero here means no "
+                        "telemetry, not measured zero")
+
+    return {
+        "version": CANONICAL_VERSION,
+        "definition": " + ".join(BUCKET_FIELDS) + ", over exact AND estimated buckets",
+        "window": {"since": since, "until": until,
+                   "days_covered": len(days_seen),
+                   "first_day": min(days_seen) if days_seen else None,
+                   "last_day": max(days_seen) if days_seen else None},
+        "exact_tokens": exact_total,
+        "estimated_tokens": est_total,
+        "blended_total": exact_total + est_total,
+        "fresh_input": tot_exact["input_tokens"] + tot_est["input_tokens"],
+        "output": tot_exact["output_tokens"] + tot_est["output_tokens"],
+        "cache_read": tot_exact["cache_read"] + tot_est["cache_read"],
+        "cache_creation": tot_exact["cache_creation"] + tot_est["cache_creation"],
+        "reasoning": tot_exact["reasoning"] + tot_est["reasoning"],
+        "invocations": tot_inv,
+        "confidence": (exact_total / (exact_total + est_total))
+                      if (exact_total + est_total) else None,
+        "lanes": lane_out,
+        "warnings": warnings,
+        "generated_at": now.isoformat(),
+    }
+
+
+def legacy_total_activity_v1(since: Optional[str] = None,
+                             until: Optional[str] = None,
+                             root: Path = DAILIES) -> int:
+    """Reproduce the connector's old number, for regression comparison only.
+
+    Kept so a test can prove what v1 dropped. Do not render this to a user.
+    """
+    v1_fields = ("input_tokens", "output_tokens", "cache_read", "cache_creation")
+    records = _read_dailies(root)
+    if since:
+        records = [r for r in records if r["date"] >= since]
+    if until:
+        records = [r for r in records if r["date"] <= until]
+    return sum(int((r.get("exact") or {}).get(f, 0) or 0)
+               for r in records for f in v1_fields)
