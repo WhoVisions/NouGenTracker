@@ -1978,10 +1978,9 @@ def run_cli_report():
         # token count but bill at ~10% of input.
         #
         # Set AI_MONTHLY_SUBSCRIPTION_USD to print your real spend alongside it.
-        try:
-            sub_cost = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
-        except ValueError:
-            sub_cost = 0.0
+        import subscriptions as _subs
+        sub_cost, _sub_source = _subs.monthly_total()
+        _sub_breakdown = _subs.monthly_breakdown()
 
         # AI_MONTHLY_SUBSCRIPTION_USD is a MONTHLY figure. Every other number in
         # this block is scoped to the window that was asked for, so printing the
@@ -1996,15 +1995,7 @@ def run_cli_report():
         # comes first.
         _win_end = min(NOW, LIMIT_UPPER)
         _win_days = max(0.0, (_win_end - CUTOFF).total_seconds() / 86400.0)
-        try:
-            _days_per_month = float(
-                os.environ.get("NOUGEN_SUB_DAYS_PER_MONTH", "") or (365.25 / 12)
-            )
-        except ValueError:
-            _days_per_month = 365.25 / 12
-        if _days_per_month <= 0:
-            _days_per_month = 365.25 / 12
-        sub_window_cost = sub_cost * (_win_days / _days_per_month)
+        sub_window_cost = _subs.prorate(sub_cost, _win_days)
 
         cache_share = (total_cache_reads / grand_total_tokens * 100) if grand_total_tokens else 0
 
@@ -2054,6 +2045,11 @@ def run_cli_report():
         print(f"You paid (subscription, this window):       ${paid_val:,.2f}")
         if sub_cost:
             print(f"  basis: ${sub_cost:,.2f}/month pro-rated over {_win_days:,.1f} day(s)")
+            if _sub_breakdown:
+                _parts = ", ".join(f"{k} ${v:,.2f}" for k, v in sorted(_sub_breakdown.items()))
+                print(f"         {_parts}")
+            elif _sub_source == "legacy":
+                print("         (unlabelled total; set NOUGEN_SUBSCRIPTIONS for a per-lane breakdown)")
         if is_estimated_run:
             print("  ~ = includes estimated tokens or models priced from estimates")
         print("----------------------------------------------------------------------")

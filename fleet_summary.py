@@ -277,10 +277,18 @@ def fleet_summary(days: Optional[int] = None,
         freshness.append((machine, ts, age, age > STALE_HOURS))
 
     if paid is None:
-        try:
-            paid = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
-        except ValueError:
-            paid = 0.0
+        # The configured subscription figure is MONTHLY, but this summary covers
+        # however many distinct machine-days the dailies happen to span. Feeding
+        # the raw monthly number into validate_and_clamp_accounting() made
+        # `absorbed = cold - paid` subtract a full month of spend from a window
+        # that might be two days, and the clamp above only checks the sign, not
+        # the units, so the result looked verified while being incomparable.
+        # Pro-rate to the days actually summarised. days_seen is the honest
+        # window here: it counts days that really carry data, not calendar span,
+        # so gaps in publication do not inflate the bill.
+        import subscriptions as _subs
+        _monthly, _ = _subs.monthly_total()
+        paid = _subs.prorate(_monthly, len(days_seen))
 
     cold_clamped, realistic_clamped, paid_clamped, absorbed = validate_and_clamp_accounting(
         total_cold, total_cost, paid

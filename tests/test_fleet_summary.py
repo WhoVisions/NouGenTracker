@@ -7,6 +7,7 @@ surfaces (double counting, stale peers, inferred tokens) must come out of the
 same files the fleet already trusts.
 """
 
+import pytest
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -126,6 +127,8 @@ def test_accounting_invariants_on_summary(tmp_path, monkeypatch):
     Invariant b: absorbed == cold - paid, never displayed negative.
     Invariant c: derived from single summary source of truth."""
     monkeypatch.setenv("NOUGEN_MACHINE", "phoebus")
+    monkeypatch.delenv("NOUGEN_SUBSCRIPTIONS", raising=False)
+    monkeypatch.delenv("NOUGEN_SUB_DAYS_PER_MONTH", raising=False)
     monkeypatch.setenv("AI_MONTHLY_SUBSCRIPTION_USD", "20.00")
     write_dailies(tmp_path, [
         daily("phoebus", "2026-08-01", model="claude-opus-5", tokens=100_000),
@@ -135,7 +138,13 @@ def test_accounting_invariants_on_summary(tmp_path, monkeypatch):
     # Invariant a
     assert s.cold_cost >= s.total_cost >= 0.0
     assert s.paid_cost >= 0.0
-    assert s.paid_cost == 20.00
+    # paid is a MONTHLY figure scoped to the days actually summarised. This
+    # fixture is one day, so a $20/month subscription contributes ~$0.66, not
+    # $20. Asserting the raw monthly here previously encoded the scope bug:
+    # absorbed = cold - paid was subtracting a month from a single day.
+    import subscriptions as subs
+    assert s.paid_cost == pytest.approx(subs.prorate(20.00, len(s.days)), abs=0.01)
+    assert s.paid_cost < 20.00
 
     # Invariant b
     expected_absorbed = max(0.0, s.cold_cost - s.paid_cost)
@@ -178,6 +187,8 @@ def test_dashboard_rendered_narrative_order(tmp_path, monkeypatch):
     3. Absorbed third (cold - paid)
     4. You paid last (subscription spend)."""
     monkeypatch.setenv("NOUGEN_MACHINE", "phoebus")
+    monkeypatch.delenv("NOUGEN_SUBSCRIPTIONS", raising=False)
+    monkeypatch.delenv("NOUGEN_SUB_DAYS_PER_MONTH", raising=False)
     monkeypatch.setenv("AI_MONTHLY_SUBSCRIPTION_USD", "40.00")
     write_dailies(tmp_path, [
         daily("phoebus", "2026-08-01", model="claude-opus-5", tokens=200_000),
