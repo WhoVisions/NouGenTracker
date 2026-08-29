@@ -1,0 +1,73 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-08-22",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 27496,
+    "input_tokens": 7237,
+    "output_tokens": 364,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-29T00:21:11-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 7,
+  "machine": "whoart",
+  "models": {
+    "<synthetic>": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 27496,
+      "input_tokens": 7237,
+      "output_tokens": 364,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "11f1bc873843369f",
+    "18564da71b9b7d4c",
+    "253879355b374c5e",
+    "64c4470a1b8f48cc",
+    "aac127ba9a708793",
+    "c7f516682ae34541",
+    "d11ce6a33027d4c6"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 27496,
+      "input_tokens": 7237,
+      "output_tokens": 364,
+      "reasoning": 0
+    },
+    "Claude Code": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 27496,
+    "input_tokens": 7237,
+    "output_tokens": 364,
+    "reasoning": 0
+  }
+}

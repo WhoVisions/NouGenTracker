@@ -1,23 +1,23 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-08-15",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 0,
-    "input_tokens": 0,
-    "output_tokens": 0,
+    "cache_read": 920268,
+    "input_tokens": 28348,
+    "output_tokens": 8035,
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 10000815,
-    "cache_read": 310856844,
-    "input_tokens": 4792,
-    "output_tokens": 843278,
+    "cache_creation": 10258156,
+    "cache_read": 329552013,
+    "input_tokens": 4935,
+    "output_tokens": 900255,
     "reasoning": 0
   },
-  "generated_at": "2026-08-15T21:32:18-04:00",
+  "generated_at": "2026-08-29T00:21:11-04:00",
   "generated_by": "claude-cli",
-  "invocations": 970,
+  "invocations": 1097,
   "machine": "whoart",
   "models": {
     "<synthetic>": {
@@ -28,35 +28,45 @@
       "reasoning": 0
     },
     "claude-fable-5": {
-      "cache_creation": 687190,
-      "cache_read": 30163481,
-      "input_tokens": 2771,
-      "output_tokens": 148615,
+      "cache_creation": 700747,
+      "cache_read": 32235739,
+      "input_tokens": 2790,
+      "output_tokens": 154839,
       "reasoning": 0
     },
     "claude-opus-4-8": {
-      "cache_creation": 363220,
-      "cache_read": 4028670,
-      "input_tokens": 30,
-      "output_tokens": 17086,
+      "cache_creation": 453281,
+      "cache_read": 4458795,
+      "input_tokens": 37,
+      "output_tokens": 20434,
       "reasoning": 0
     },
     "claude-opus-5": {
-      "cache_creation": 8950405,
-      "cache_read": 276664693,
-      "input_tokens": 1991,
-      "output_tokens": 677577,
+      "cache_creation": 9104128,
+      "cache_read": 292857479,
+      "input_tokens": 2108,
+      "output_tokens": 724982,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 920268,
+      "input_tokens": 28348,
+      "output_tokens": 8035,
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
+  "provider_stats": {},
   "schema": 3,
   "sketch": [
+    "0078bf87b407ec78",
     "00ff9c41b5c01bfb",
     "0112556737f16083",
     "012188e3166e001c",
     "01506f913aa62d01",
     "016a0f65929664a5",
+    "0188d30c3fdc483d",
     "01af07c122790c52",
     "01b200cbf3b3ba16",
     "025bfb441e4c790d",
@@ -66,6 +76,7 @@
     "0357422f6038ec27",
     "038e803c82619233",
     "03c81be9bcfebcad",
+    "041718ba3ff66514",
     "04a620adf0ecaf88",
     "04d562eac0c2d639",
     "04e5d096ce4fdb0f",
@@ -86,10 +97,14 @@
     "098cf7b43ddd14cb",
     "098cf8dafe87addd",
     "099581b322e87df5",
+    "09d3999440c1ca8a",
+    "0a532d3233080224",
     "0af88063506e128b",
+    "0c1e5272733bcaa4",
     "0c46b448685e734e",
     "0c73a6be3bf3ed3b",
     "0cc899b72c968c90",
+    "0ccadab6318d18a3",
     "0cd143591908f20c",
     "0dd85b36e151e3e7",
     "0e4c8ecaec058ec3",
@@ -108,29 +123,29 @@
     "105e8aeac73e4d98",
     "105ec2fff2b31359",
     "10956fd5ee5cdc32",
-    "10be7cf6d6afe5ff",
-    "10f38e1a852b4266",
-    "112cbddb83f47c68",
-    "11804d6ea50844ef",
-    "11fb510884feb0ea",
-    "1215500d6de5d76f",
-    "1218ea0dae95cacc",
-    "12b6c46f18c9b7af"
+    "10be7cf6d6afe5ff"
   ],
   "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 920268,
+      "input_tokens": 28348,
+      "output_tokens": 8035,
+      "reasoning": 0
+    },
     "Claude Code": {
-      "cache_creation": 10000815,
-      "cache_read": 310856844,
-      "input_tokens": 4792,
-      "output_tokens": 843278,
+      "cache_creation": 10258156,
+      "cache_read": 329552013,
+      "input_tokens": 4935,
+      "output_tokens": 900255,
       "reasoning": 0
     }
   },
   "totals": {
-    "cache_creation": 10000815,
-    "cache_read": 310856844,
-    "input_tokens": 4792,
-    "output_tokens": 843278,
+    "cache_creation": 10258156,
+    "cache_read": 330472281,
+    "input_tokens": 33283,
+    "output_tokens": 908290,
     "reasoning": 0
   }
 }

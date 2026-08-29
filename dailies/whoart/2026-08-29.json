@@ -1,0 +1,81 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-08-29",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 2653632,
+    "input_tokens": 210322,
+    "output_tokens": 7825,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-29T00:21:11-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 29,
+  "machine": "whoart",
+  "models": {
+    "gemini-m299": {
+      "cache_creation": 0,
+      "cache_read": 2653632,
+      "input_tokens": 210322,
+      "output_tokens": 7825,
+      "reasoning": 0
+    }
+  },
+  "partial": true,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "076e229ff8d41a1a",
+    "09a31cf36962f868",
+    "0b2a7111ffe328ba",
+    "0c2aa5f814fecece",
+    "1cf19f8851dc0d02",
+    "2e82068c6e17c7f7",
+    "3b30b7126b9b097b",
+    "45950ec5bad97b65",
+    "5b982b99b615b5cd",
+    "6387a2b9316f602d",
+    "64f49fcbbe9dcf75",
+    "6b7db6dcd362aefb",
+    "6f129d0edffe54dc",
+    "776a73731a8a0b4c",
+    "7fd36c73ac0456fc",
+    "8100eed84d575853",
+    "a77fd72cf307731b",
+    "af37ad97ebc21b5b",
+    "b590b8691a2f6f12",
+    "c1cb11d7e31c505e",
+    "cb30c7b3b5b9e327",
+    "d2f39ea3735bfc6c",
+    "d6d0348c2b248774",
+    "d760d2c5cb735044",
+    "db42953f092415eb",
+    "e605ee67e0ef90e2",
+    "f079144bb062c78f",
+    "fdc607520cb2404c",
+    "feba424fba3bc6c4"
+  ],
+  "sources": {
+    "Antigravity (RPC)": {
+      "cache_creation": 0,
+      "cache_read": 2653632,
+      "input_tokens": 210322,
+      "output_tokens": 7825,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 2653632,
+    "input_tokens": 210322,
+    "output_tokens": 7825,
+    "reasoning": 0
+  }
+}

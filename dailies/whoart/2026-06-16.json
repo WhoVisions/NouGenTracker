@@ -1,5 +1,5 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-06-16",
   "estimated": {
     "cache_creation": 0,
@@ -10,14 +10,14 @@
   },
   "exact": {
     "cache_creation": 0,
-    "cache_read": 23705181,
-    "input_tokens": 26058423,
-    "output_tokens": 28363,
+    "cache_read": 23637695,
+    "input_tokens": 25870650,
+    "output_tokens": 26731,
     "reasoning": 13248
   },
-  "generated_at": "2026-08-04T21:12:48-04:00",
+  "generated_at": "2026-08-29T00:21:11-04:00",
   "generated_by": "claude-cli",
-  "invocations": 820,
+  "invocations": 815,
   "machine": "whoart",
   "models": {
     "claude-opus-4-6-thinking (estimated)": {
@@ -29,9 +29,9 @@
     },
     "gemini-3-flash-preview": {
       "cache_creation": 0,
-      "cache_read": 23705181,
-      "input_tokens": 26058423,
-      "output_tokens": 28363,
+      "cache_read": 23637695,
+      "input_tokens": 25870650,
+      "output_tokens": 26731,
       "reasoning": 13248
     },
     "gemini-3-flash-preview (estimated)": {
@@ -57,6 +57,7 @@
     }
   },
   "partial": false,
+  "provider_stats": {},
   "schema": 3,
   "sketch": [
     "000bbc5ee273746b",
@@ -134,17 +135,17 @@
     },
     "Gemini CLI": {
       "cache_creation": 0,
-      "cache_read": 71261587,
-      "input_tokens": 26113437,
-      "output_tokens": 37934,
+      "cache_read": 71194101,
+      "input_tokens": 25925664,
+      "output_tokens": 36302,
       "reasoning": 13248
     }
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 151450380,
-    "input_tokens": 26301346,
-    "output_tokens": 116539,
+    "cache_read": 151382894,
+    "input_tokens": 26113573,
+    "output_tokens": 114907,
     "reasoning": 13248
   }
 }
