@@ -1944,12 +1944,16 @@ def run_cli_report():
         grand_total_cost = 0.0
         grand_total_cold = 0.0
         total_cache_reads = 0
+        total_fresh_input = 0
+        total_output = 0
         used_estimate = False
         for model in sorted(all_models, key=lambda m: -sum(all_models[m].values())):
             i, o, cc, cr, rt = cols(all_models[model])
             total = i + o + cc + cr + rt
             grand_total_tokens += total
             total_cache_reads += cr
+            total_fresh_input += i + cc
+            total_output += o + rt
             cost, src = model_bill(model, all_models[model])
             grand_total_cost += cost
             # Cold-boot: every input-side token (input + cache-creation + cache-read)
@@ -2033,28 +2037,34 @@ def run_cli_report():
         absorbed_val = float(round_to_cents(absorbed_dec))
 
         print("\n======================================================================")
-        print("API-EQUIVALENT SHADOW BILL  (hypothetical reference, NOT realized savings)")
+        print("WORK MOVED THROUGH THIS WINDOW")
         print("======================================================================")
-        print(f"Throughput (blended total):                 {fmt(grand_total_tokens)} tokens{est_tag}")
-        print(f"  Exact vs Estimated share:                 {exact_pct:.1f}% exact ({fmt(exact_tok)}) | {est_pct:.1f}% estimated{est_tag} ({fmt(est_tok)})")
-        print(f"API Equivalent (cold-boot, list prices):    ${cold_val:,.2f}{est_tag}")
-        print("  (what this throughput would cost fresh with no cache)")
-        print(f"Absorbed (caching + flat-rate plans):       ${absorbed_val:,.2f}{est_tag}")
-        print(f"  Realistic cached API cost:                ${cached_realistic_val:,.2f}")
-        print(f"  Cache-reads share of all tokens:          {cache_share:.1f}%  (billed ~10% of input)")
-        print(f"You paid (subscription, this window):       ${paid_val:,.2f}")
+        # The two numbers that state the scale lead, at full precision. Everything
+        # that shrinks the headline (the cached price, the subscription) is a
+        # footnote below the rule. This report exists to show how much work ran,
+        # not how little it cost; leading with the small number inverts that into
+        # a frugality brag, and stacking disclaimers around the big one reads as
+        # an apology for the scale.
+        print(f"  TOTAL TOKENS        {fmt(grand_total_tokens):>22}{est_tag}")
+        print(f"  COLD API COST       {chr(36) + format(cold_val, ',.2f'):>22}{est_tag}")
+        print("                       every token billed fresh at list price: input +")
+        print("                       cache-write + cache-read at the full input rate,")
+        print("                       output + reasoning at the output rate.")
+        print("")
+        print(f"  cache reads         {fmt(total_cache_reads):>22}   {cache_share:.1f}% of all tokens")
+        print(f"  fresh input         {fmt(total_fresh_input):>22}")
+        print(f"  output              {fmt(total_output):>22}")
+        print(f"  measured / inferred {exact_pct:>13.1f}% / {est_pct:.1f}%")
+        print("----------------------------------------------------------------------")
+        print(f"  cached API price    ${cached_realistic_val:,.2f}      absorbed ${absorbed_val:,.2f}{est_tag}")
         if sub_cost:
-            print(f"  basis: ${sub_cost:,.2f}/month pro-rated over {_win_days:,.1f} day(s)")
+            _basis = f"${sub_cost:,.2f}/mo over {_win_days:,.1f}d"
             if _sub_breakdown:
-                _parts = ", ".join(f"{k} ${v:,.2f}" for k, v in sorted(_sub_breakdown.items()))
-                print(f"         {_parts}")
-            elif _sub_source == "legacy":
-                print("         (unlabelled total; set NOUGEN_SUBSCRIPTIONS for a per-lane breakdown)")
+                _basis += " = " + ", ".join(f"{k} ${v:,.2f}" for k, v in sorted(_sub_breakdown.items()))
+            print(f"  subscription        ${paid_val:,.2f}      ({_basis})")
         if is_estimated_run:
             print("  ~ = includes estimated tokens or models priced from estimates")
-        print("----------------------------------------------------------------------")
-        print("This is the price you DIDN'T pay by using flat-rate plans, not a sum")
-        print("you earned. Treat it as a usage gauge, not a savings account.")
+        print("  COLD is a scale gauge at list prices, not an invoice.")
         print("======================================================================\n")
     
         compute_and_print_split(ALL_INVOCATIONS, "Blended Report")

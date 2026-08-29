@@ -71,11 +71,29 @@ def test_bad_days_per_month_override_falls_back_not_crashes(bad):
 
 
 def test_report_labels_the_window_not_the_month():
-    """The old label read as spend-to-date; it must name its scope."""
+    """The subscription line must show its scope, not read as spend-to-date.
+
+    Asserts the contract, not the prose: the original misleading label is gone,
+    and whatever wording replaces it still prints a per-month figure against a
+    day count so the reader can see it was pro-rated. Pinning exact copy here
+    made a later headline rewrite fail for changing wording it did not break.
+    """
     src = open(os.path.join(ROOT, "token_tracker.py"), encoding="utf-8").read()
     assert "You paid (actual subscription spend)" not in src
-    assert "subscription, this window" in src
-    assert "pro-rated over" in src
+    assert "/mo over" in src, "subscription basis must show months-over-days"
+    assert "_win_days" in src, "the basis must be derived from the window length"
+
+
+def test_cold_figure_is_named_cold_in_the_headline():
+    """The headline dollar figure must say COLD, not only 'API-equivalent'.
+
+    The number was always the uncached one, but a reader (or a downstream
+    guard) reading 'API-EQUIVALENT' cannot tell whether cache discounts were
+    applied. Naming it removes the ambiguity at the source.
+    """
+    src = open(os.path.join(ROOT, "token_tracker.py"), encoding="utf-8").read()
+    assert "COLD API COST" in src
+    assert "cache-write + cache-read at the full input rate" in src
 
 
 def test_tracker_still_imports_after_the_change():
