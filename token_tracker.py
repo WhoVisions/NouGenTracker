@@ -1983,6 +1983,29 @@ def run_cli_report():
         except ValueError:
             sub_cost = 0.0
 
+        # AI_MONTHLY_SUBSCRIPTION_USD is a MONTHLY figure. Every other number in
+        # this block is scoped to the window that was asked for, so printing the
+        # month's total next to them read as the window's spend: a 20-hour
+        # window and a six-day window both printed the same $108.88. It also
+        # made "Absorbed" (cold - paid) subtract a full month of subscription
+        # from a fraction of a day of cold-boot, which is not an accounting
+        # invariant, it is a category error.
+        #
+        # Pro-rate to the window actually reported. The window ends at NOW for
+        # an open-ended run and at LIMIT_UPPER for an explicit --end, whichever
+        # comes first.
+        _win_end = min(NOW, LIMIT_UPPER)
+        _win_days = max(0.0, (_win_end - CUTOFF).total_seconds() / 86400.0)
+        try:
+            _days_per_month = float(
+                os.environ.get("NOUGEN_SUB_DAYS_PER_MONTH", "") or (365.25 / 12)
+            )
+        except ValueError:
+            _days_per_month = 365.25 / 12
+        if _days_per_month <= 0:
+            _days_per_month = 365.25 / 12
+        sub_window_cost = sub_cost * (_win_days / _days_per_month)
+
         cache_share = (total_cache_reads / grand_total_tokens * 100) if grand_total_tokens else 0
 
         # Exact vs estimated accounting from ALL_INVOCATIONS
@@ -2003,7 +2026,7 @@ def run_cli_report():
         est_tag = " ~" if is_estimated_run else ""
 
         # Enforce accounting invariants via Decimal math
-        paid_val = max(0.0, sub_cost)
+        paid_val = max(0.0, sub_window_cost)
         cached_realistic_val = max(0.0, grand_total_cost)
         cold_val = max(cached_realistic_val, grand_total_cold)
         cold_dec = round_to_cents(Decimal(str(cold_val)))
@@ -2028,7 +2051,9 @@ def run_cli_report():
         print(f"Absorbed (caching + flat-rate plans):       ${absorbed_val:,.2f}{est_tag}")
         print(f"  Realistic cached API cost:                ${cached_realistic_val:,.2f}")
         print(f"  Cache-reads share of all tokens:          {cache_share:.1f}%  (billed ~10% of input)")
-        print(f"You paid (actual subscription spend):       ${paid_val:,.2f}")
+        print(f"You paid (subscription, this window):       ${paid_val:,.2f}")
+        if sub_cost:
+            print(f"  basis: ${sub_cost:,.2f}/month pro-rated over {_win_days:,.1f} day(s)")
         if is_estimated_run:
             print("  ~ = includes estimated tokens or models priced from estimates")
         print("----------------------------------------------------------------------")
