@@ -1,0 +1,59 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-08-03",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 1820616,
+    "cache_read": 4761639,
+    "input_tokens": 14,
+    "output_tokens": 5425,
+    "reasoning": 0
+  },
+  "generated_at": "2026-08-29T01:07:34-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 7,
+  "machine": "phoebus",
+  "models": {
+    "claude-opus-5": {
+      "cache_creation": 1820616,
+      "cache_read": 4761639,
+      "input_tokens": 14,
+      "output_tokens": 5425,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "1d7f3395376c771e",
+    "58f019e855a3f0b7",
+    "824e6c499810b014",
+    "93480b2d7760c1e5",
+    "c283e3c7aea1699a",
+    "cb454ac960dbb6fd",
+    "efeb2ded32fd3a18"
+  ],
+  "sources": {
+    "Claude Code": {
+      "cache_creation": 1820616,
+      "cache_read": 4761639,
+      "input_tokens": 14,
+      "output_tokens": 5425,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 1820616,
+    "cache_read": 4761639,
+    "input_tokens": 14,
+    "output_tokens": 5425,
+    "reasoning": 0
+  }
+}
