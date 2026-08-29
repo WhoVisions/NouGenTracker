@@ -1,0 +1,12 @@
+{
+  "machine": "blade1tb",
+  "agent": "claude-cli",
+  "goal": "Codex subtotal fold, subscription window scoping, COLD-first headline, 2026-08-28 daily publish",
+  "scope": "token_tracker.py tests/test_subscription_prorate.py tests/test_codex_subtotals.py subscriptions.py fleet_summary.py reports/daily dailies/blade1tb",
+  "status": "active",
+  "session": "747e3e3b-383d-4282-b8eb-0f403541ebe3",
+  "branch": "main",
+  "sha": "6e7a53a",
+  "created_utc": "2026-08-29T04:27:45.597803+00:00",
+  "ttl_hours": 8.0
+}
