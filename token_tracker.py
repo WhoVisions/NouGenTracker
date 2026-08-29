@@ -17,8 +17,7 @@ import ssl
 import sqlite3
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-import datetime as _dtm
-
+from decimal import Decimal
 import pricing_live
 from pricing_live import calculate_cost, round_to_cents
 
@@ -1979,21 +1978,59 @@ def run_cli_report():
         # token count but bill at ~10% of input.
         #
         # Set AI_MONTHLY_SUBSCRIPTION_USD to print your real spend alongside it.
-        sub_cost = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
+        try:
+            sub_cost = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
+        except ValueError:
+            sub_cost = 0.0
+
         cache_share = (total_cache_reads / grand_total_tokens * 100) if grand_total_tokens else 0
+
+        # Exact vs estimated accounting from ALL_INVOCATIONS
+        exact_tok = sum(
+            int(inv.get("input_tokens", 0)) + int(inv.get("output_tokens", 0)) +
+            int(inv.get("cache_creation", 0)) + int(inv.get("cache_read", 0)) + int(inv.get("reasoning", 0))
+            for inv in ALL_INVOCATIONS if inv.get("exact", True)
+        )
+        est_tok = sum(
+            int(inv.get("input_tokens", 0)) + int(inv.get("output_tokens", 0)) +
+            int(inv.get("cache_creation", 0)) + int(inv.get("cache_read", 0)) + int(inv.get("reasoning", 0))
+            for inv in ALL_INVOCATIONS if not inv.get("exact", True)
+        )
+        blended_tokens = grand_total_tokens or (exact_tok + est_tok)
+        exact_pct = (exact_tok / blended_tokens * 100) if blended_tokens else 100.0
+        est_pct = (est_tok / blended_tokens * 100) if blended_tokens else 0.0
+        is_estimated_run = used_estimate or (est_tok > 0)
+        est_tag = " ~" if is_estimated_run else ""
+
+        # Enforce accounting invariants via Decimal math
+        paid_val = max(0.0, sub_cost)
+        cached_realistic_val = max(0.0, grand_total_cost)
+        cold_val = max(cached_realistic_val, grand_total_cold)
+        cold_dec = round_to_cents(Decimal(str(cold_val)))
+        paid_dec = round_to_cents(Decimal(str(paid_val)))
+        absorbed_dec = cold_dec - paid_dec
+        if absorbed_dec < Decimal("0.00"):
+            import logging
+            logging.getLogger("token_tracker").warning(
+                "Accounting inconsistency: cold (%s) < paid (%s); clamping absorbed to 0.0",
+                cold_val, paid_val
+            )
+            absorbed_dec = Decimal("0.00")
+        absorbed_val = float(round_to_cents(absorbed_dec))
 
         print("\n======================================================================")
         print("API-EQUIVALENT SHADOW BILL  (hypothetical reference, NOT realized savings)")
         print("======================================================================")
-        print(f"Realistic cost (cache-reads billed as cache): ${grand_total_cost:,.2f}")
-        print(f"COLD-BOOT cost (no cache, every token fresh): ${grand_total_cold:,.2f}")
-        print(f"What caching saved vs cold-boot:              ${grand_total_cold - grand_total_cost:,.2f}")
-        if used_estimate:
-            print("  ~ = model priced from an estimate, not a first-party doc")
-        print(f"Cache-reads as share of all tokens:         {cache_share:.1f}%  "
-              f"(billed ~10% of input - why naive math inflates)")
-        if sub_cost > 0:
-            print(f"Your actual subscription spend:             ${sub_cost:,.2f}")
+        print(f"Throughput (blended total):                 {fmt(grand_total_tokens)} tokens{est_tag}")
+        print(f"  Exact vs Estimated share:                 {exact_pct:.1f}% exact ({fmt(exact_tok)}) | {est_pct:.1f}% estimated{est_tag} ({fmt(est_tok)})")
+        print(f"API Equivalent (cold-boot, list prices):    ${cold_val:,.2f}{est_tag}")
+        print("  (what this throughput would cost fresh with no cache)")
+        print(f"Absorbed (caching + flat-rate plans):       ${absorbed_val:,.2f}{est_tag}")
+        print(f"  Realistic cached API cost:                ${cached_realistic_val:,.2f}")
+        print(f"  Cache-reads share of all tokens:          {cache_share:.1f}%  (billed ~10% of input)")
+        print(f"You paid (actual subscription spend):       ${paid_val:,.2f}")
+        if is_estimated_run:
+            print("  ~ = includes estimated tokens or models priced from estimates")
         print("----------------------------------------------------------------------")
         print("This is the price you DIDN'T pay by using flat-rate plans, not a sum")
         print("you earned. Treat it as a usage gauge, not a savings account.")

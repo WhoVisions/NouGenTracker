@@ -63,9 +63,42 @@ def test_reasoning_billed_at_output_rate():
     assert abs(cost - 25.0) < 1e-6  # output rate
 
 
+def test_cold_boot_pricing_vs_realistic_and_absorbed():
+    """Cold-boot prices all input-side tokens at base input rate (no cache discount)."""
+    inp_rate, out_rate, _cr, _src = tt.price_for("claude-opus-4-8")
+    d = {
+        "input_tokens": 1_000_000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 1_000_000,
+        "output_tokens": 100_000,
+        "reasoning_tokens": 0,
+    }
+    realistic_cost, _ = tt.model_bill("claude-opus-4-8", d)
+    # Realistic: 1M in ($5) + 1M cache ($0.5) + 0.1M out ($2.5) = $8.00
+    assert abs(realistic_cost - 8.00) < 1e-6
+
+    # Cold boot: (1M in + 1M cache) @ $5 in + 0.1M out ($2.5) = $12.50
+    cold_cost = float(tt.calculate_cost(
+        input_tokens=(1_000_000 + 1_000_000),
+        output_tokens=100_000,
+        inp_rate=inp_rate,
+        out_rate=out_rate,
+    ))
+    assert abs(cold_cost - 12.50) < 1e-6
+    assert cold_cost >= realistic_cost
+
+    # Absorbed with paid = 2.50
+    from decimal import Decimal
+    paid_dec = Decimal("2.50")
+    cold_dec = tt.round_to_cents(Decimal(str(cold_cost)))
+    absorbed = float(cold_dec - paid_dec)
+    assert abs(absorbed - 10.00) < 1e-6
+
+
 def test_audit_rubric_is_ten_points_and_runs():
     ad = _load("audit_daemon", "audit_daemon.py")
     rep = ad.audit()
     assert rep["max"] == 10
     assert 0 <= rep["score"] <= 10
     assert all("check" in r and "pass" in r for r in rep["results"])
+

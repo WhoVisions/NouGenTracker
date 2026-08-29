@@ -117,3 +117,125 @@ def test_days_window_filters_old_records(tmp_path, monkeypatch):
     ])
     s = fs.fleet_summary(days=7, root=tmp_path, now=NOW)
     assert s.days == ["2026-08-07"]
+
+
+# --- Accounting Invariants & Hero Metrics Reorder Tests -----------------------
+
+def test_accounting_invariants_on_summary(tmp_path, monkeypatch):
+    """Invariant a: cold >= cached_realistic >= 0 and paid >= 0.
+    Invariant b: absorbed == cold - paid, never displayed negative.
+    Invariant c: derived from single summary source of truth."""
+    monkeypatch.setenv("NOUGEN_MACHINE", "phoebus")
+    monkeypatch.setenv("AI_MONTHLY_SUBSCRIPTION_USD", "20.00")
+    write_dailies(tmp_path, [
+        daily("phoebus", "2026-08-01", model="claude-opus-5", tokens=100_000),
+    ])
+    s = fs.fleet_summary(root=tmp_path, now=NOW)
+
+    # Invariant a
+    assert s.cold_cost >= s.total_cost >= 0.0
+    assert s.paid_cost >= 0.0
+    assert s.paid_cost == 20.00
+
+    # Invariant b
+    expected_absorbed = max(0.0, s.cold_cost - s.paid_cost)
+    assert abs(s.absorbed_cost - expected_absorbed) < 1e-4
+    assert s.absorbed_cost >= 0.0
+
+
+def test_validate_and_clamp_accounting_invariants():
+    """Direct invariant unit tests on validate_and_clamp_accounting."""
+    # 1. Normal case
+    cold, real, paid, abs_val = fs.validate_and_clamp_accounting(100.0, 40.0, 20.0)
+    assert cold == 100.0
+    assert real == 40.0
+    assert paid == 20.0
+    assert abs_val == 80.0
+
+    # 2. Paid exceeds cold -> absorbed clamped to 0, never negative
+    cold, real, paid, abs_val = fs.validate_and_clamp_accounting(15.0, 10.0, 50.0)
+    assert cold == 15.0
+    assert real == 10.0
+    assert paid == 50.0
+    assert abs_val == 0.0
+
+    # 3. Negative paid clamped to 0
+    cold, real, paid, abs_val = fs.validate_and_clamp_accounting(50.0, 20.0, -10.0)
+    assert paid == 0.0
+    assert abs_val == 50.0
+
+    # 4. Inconsistent cold < realistic -> cold clamped to realistic
+    cold, real, paid, abs_val = fs.validate_and_clamp_accounting(10.0, 30.0, 5.0)
+    assert cold == 30.0
+    assert real == 30.0
+    assert abs_val == 25.0
+
+
+def test_dashboard_rendered_narrative_order(tmp_path, monkeypatch):
+    """Verify narrative order in rendered HTML:
+    1. Throughput first (hero)
+    2. API equivalent second (cold-boot)
+    3. Absorbed third (cold - paid)
+    4. You paid last (subscription spend)."""
+    monkeypatch.setenv("NOUGEN_MACHINE", "phoebus")
+    monkeypatch.setenv("AI_MONTHLY_SUBSCRIPTION_USD", "40.00")
+    write_dailies(tmp_path, [
+        daily("phoebus", "2026-08-01", model="claude-opus-5", tokens=200_000),
+    ])
+    import dashboard
+    s = fs.fleet_summary(root=tmp_path, now=NOW)
+    html = dashboard.render(s)
+
+    # Narrative order proof: locate each section in HTML string
+    hero_idx = html.index('class="hero"')
+    hero_note_idx = html.index('class="hero-note"')
+    api_equiv_idx = html.index('<div class="k">api equivalent</div>')
+    absorbed_idx = html.index('<div class="k">absorbed</div>')
+    you_paid_idx = html.index('<div class="k">you paid</div>')
+
+    # Assert narrative order: Hero (Throughput) -> API Equivalent -> Absorbed -> You Paid
+    assert hero_idx < hero_note_idx < api_equiv_idx < absorbed_idx < you_paid_idx
+
+    # Hero must lead with tokens (not dollars)
+    hero_snippet = html[hero_idx:hero_note_idx]
+    assert "$" not in hero_snippet
+    assert dashboard._fmt_tokens(s.total_tokens) in hero_snippet
+
+
+def test_estimated_marker_propagation_in_dashboard(tmp_path, monkeypatch):
+    """When estimated tokens are present, estimated marker (~) propagates to hero & tiles."""
+    monkeypatch.setenv("NOUGEN_MACHINE", "phoebus")
+    write_dailies(tmp_path, [
+        daily("phoebus", "2026-08-01", tokens=100_000),
+        daily("blade1tb", "2026-08-01", tokens=50_000, estimated=50_000),
+    ])
+    import dashboard
+    s = fs.fleet_summary(root=tmp_path, now=NOW)
+    assert s.is_estimated is True
+    assert s.confidence < 1.0
+
+    html = dashboard.render(s)
+    # Hero carries estimated marker
+    hero_idx = html.index('class="hero"')
+    hero_note_idx = html.index('class="hero-note"')
+    tiles_idx = html.index('class="tiles"')
+
+    hero_str = html[hero_idx:hero_note_idx]
+    hero_note_str = html[hero_note_idx:tiles_idx]
+    assert "~" in hero_str
+    assert "estimated (~)" in hero_note_str
+    assert f"{s.confidence:.1%} exact" in hero_note_str
+
+    # When 100% exact (no estimated tokens)
+    s_exact = fs.FleetSummary(
+        machines={}, days=["2026-08-01"], total_cost=10.0, total_tokens=100_000,
+        cache_read=50_000, confidence=1.0, inferred=[], overlaps=[], freshness=[], local="phoebus",
+        cold_cost=20.0, paid_cost=0.0, absorbed_cost=20.0, exact_tokens=100_000, estimated_tokens=0,
+    )
+    assert s_exact.is_estimated is False
+    html_exact = dashboard.render(s_exact)
+    hero_exact_str = html_exact[html_exact.index('class="hero"'):html_exact.index('class="hero-note"')]
+    hero_note_exact_str = html_exact[html_exact.index('class="hero-note"'):html_exact.index('class="tiles"')]
+    assert "~" not in hero_exact_str
+    assert "100% exact" in hero_note_exact_str
+

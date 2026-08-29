@@ -312,19 +312,47 @@ def render(summary: Any, threshold: float = 0.0,
     machines = len(summary.machines)
     busiest = summary.busiest_day
     conf = ("unknown" if summary.confidence is None
-            else ("100%" if summary.confidence >= 1
+            else ("100%" if summary.confidence >= 0.9999
                   else f"{summary.confidence:.1%}"))
+    is_est = getattr(summary, "is_estimated", False) or (
+        summary.confidence is not None and summary.confidence < 0.9999
+    )
+    est_tag = " ~" if is_est else ""
+
+    if summary.confidence is not None and summary.confidence < 0.9999:
+        hero_note = (
+            f"Total tokens processed across the fleet &middot; "
+            f"{summary.confidence:.1%} exact &middot; "
+            f"{1.0 - summary.confidence:.1%} estimated (~)"
+        )
+    elif summary.total_tokens > 0:
+        hero_note = "Total tokens processed across the fleet &middot; 100% exact"
+    else:
+        hero_note = "Total tokens processed across the fleet &middot; no data yet"
+
+    cold_val = getattr(summary, "cold_cost", summary.total_cost)
+    absorbed_val = getattr(summary, "absorbed_cost", max(0.0, cold_val - getattr(summary, "paid_cost", 0.0)))
+    paid_val = getattr(summary, "paid_cost", 0.0)
+
     return f"""<style>{CSS}</style>
 <div class="viz-root">
 <h1>{_esc(title)}</h1>
 <p class="sub">{_esc(span)} &middot; {machines} machine{'s' if machines != 1 else ''}
 reporting &middot; generated {_esc(generated)}</p>
 
-<p class="hero">{_fmt_usd(summary.total_cost)}</p>
-<p class="hero-note">API-equivalent cost across the fleet, cache-reads priced as
-cache-reads. {_fmt_tokens(summary.total_tokens)} tokens moved to earn it.</p>
+<p class="hero">{_fmt_tokens(summary.total_tokens)}{est_tag}</p>
+<p class="hero-note">{hero_note}</p>
 
 <div class="tiles">
+  <div class="tile"><div class="k">api equivalent</div>
+    <div class="v">{_fmt_usd(cold_val)}{est_tag}</div>
+    <div class="n">cold-boot list price (no cache)</div></div>
+  <div class="tile"><div class="k">absorbed</div>
+    <div class="v">{_fmt_usd(absorbed_val)}{est_tag}</div>
+    <div class="n">caching + flat-rate plans</div></div>
+  <div class="tile"><div class="k">you paid</div>
+    <div class="v">{_fmt_usd(paid_val)}</div>
+    <div class="n">actual subscription spend</div></div>
   <div class="tile"><div class="k">cache-read share</div>
     <div class="v">{summary.cache_share:.0%}</div>
     <div class="n">{_fmt_tokens(summary.cache_read)} re-read</div></div>

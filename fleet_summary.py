@@ -23,10 +23,15 @@ import socket
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from pricing_live import calculate_cost, round_to_cents
 import token_tracker as tt
+
+logger = logging.getLogger("fleet_summary")
 
 DAILIES = Path(__file__).resolve().parent / "dailies"
 BUCKET_FIELDS = ("input_tokens", "output_tokens", "cache_creation",
@@ -43,6 +48,50 @@ class Overlap:
     similarity: float
 
 
+def validate_and_clamp_accounting(
+    cold: float,
+    realistic: float,
+    paid: float,
+) -> Tuple[float, float, float, float]:
+    """Enforce accounting invariants:
+    a. cold >= cached_realistic >= 0 and paid >= 0.
+    b. absorbed == cold - paid, never displayed negative (clamp to 0 with logged warning).
+    c. Evaluated using Decimal arithmetic.
+
+    Returns:
+      (cold_clamped, realistic_clamped, paid_clamped, absorbed)
+    """
+    if paid < 0:
+        logger.warning("Negative paid spend (%s); clamping to 0.0", paid)
+        paid = 0.0
+
+    if realistic < 0:
+        logger.warning("Negative realistic cost (%s); clamping to 0.0", realistic)
+        realistic = 0.0
+
+    if cold < realistic:
+        logger.warning(
+            "Accounting inconsistency: cold cost (%s) < realistic cost (%s); clamping cold to realistic",
+            cold, realistic
+        )
+        cold = realistic
+
+    cold_dec = round_to_cents(Decimal(str(cold)))
+    realistic_dec = round_to_cents(Decimal(str(realistic)))
+    paid_dec = round_to_cents(Decimal(str(paid)))
+    absorbed_dec = cold_dec - paid_dec
+
+    if absorbed_dec < Decimal("0.00"):
+        logger.warning(
+            "Accounting inconsistency: cold (%s) < paid (%s); clamping absorbed to 0.0",
+            cold, paid
+        )
+        absorbed_dec = Decimal("0.00")
+
+    absorbed = float(round_to_cents(absorbed_dec))
+    return (float(cold_dec), float(realistic_dec), float(paid_dec), absorbed)
+
+
 @dataclass
 class FleetSummary:
     machines: Dict[str, Dict[str, Any]]
@@ -55,6 +104,19 @@ class FleetSummary:
     overlaps: List[Overlap]
     freshness: List[Tuple[str, Optional[datetime], float, bool]]
     local: str
+    cold_cost: float = 0.0
+    paid_cost: float = 0.0
+    absorbed_cost: float = 0.0
+    exact_tokens: int = 0
+    estimated_tokens: int = 0
+
+    @property
+    def is_estimated(self) -> bool:
+        return (
+            self.estimated_tokens > 0
+            or (self.confidence is not None and self.confidence < 0.9999)
+            or bool(self.inferred)
+        )
 
     @property
     def cache_share(self) -> float:
@@ -95,6 +157,23 @@ def _bill(model: str, bucket: Dict[str, int], when: str) -> float:
     return cost
 
 
+def _bill_cold(model: str, bucket: Dict[str, int], when: str) -> float:
+    """Price a dailies bucket cold: all input-side tokens fresh, reasoning as output, no cache discount."""
+    inp, out, _cr, _src = tt.price_for(model, when)
+    i = int(bucket.get("input_tokens", 0))
+    cc = int(bucket.get("cache_creation", 0))
+    cr = int(bucket.get("cache_read", 0))
+    o = int(bucket.get("output_tokens", 0))
+    rt = int(bucket.get("reasoning", 0))
+    cost = calculate_cost(
+        input_tokens=(i + cc + cr),
+        output_tokens=(o + rt),
+        inp_rate=inp,
+        out_rate=out,
+    )
+    return float(cost)
+
+
 def _tokens(bucket: Dict[str, int]) -> int:
     return sum(int(bucket.get(f, 0)) for f in BUCKET_FIELDS)
 
@@ -113,7 +192,8 @@ def _read_dailies(root: Path) -> List[Dict[str, Any]]:
 
 def fleet_summary(days: Optional[int] = None,
                   root: Path = DAILIES,
-                  now: Optional[datetime] = None) -> FleetSummary:
+                  now: Optional[datetime] = None,
+                  paid: Optional[float] = None) -> FleetSummary:
     """Everything the fleet has published, folded into one view.
 
     Includes THIS machine: a fleet report that omits the box running it is
@@ -128,7 +208,7 @@ def fleet_summary(days: Optional[int] = None,
     machines: Dict[str, Dict[str, Any]] = {}
     days_seen: set = set()
     latest: Dict[str, datetime] = {}
-    total_cost = total_tokens = cache_read = 0
+    total_cost = total_cold = total_tokens = cache_read = 0
     exact_tokens = estimated_tokens = 0
     estimated_by: set = set()
     # (day, model, exact-bucket tuple) -> machines reporting it, for the
@@ -139,7 +219,7 @@ def fleet_summary(days: Optional[int] = None,
     for rec in records:
         machine, day = rec["machine"], rec["date"]
         entry = machines.setdefault(machine, {
-            "cost": 0.0, "tokens": 0, "calls": 0, "cache_read": 0,
+            "cost": 0.0, "cold_cost": 0.0, "tokens": 0, "calls": 0, "cache_read": 0,
             "days": defaultdict(float), "models": defaultdict(float),
         })
         days_seen.add(day)
@@ -153,13 +233,16 @@ def fleet_summary(days: Optional[int] = None,
 
         for model, bucket in (rec.get("models") or {}).items():
             cost = _bill(model, bucket, day)
+            cold = _bill_cold(model, bucket, day)
             tokens = _tokens(bucket)
             entry["cost"] += cost
+            entry["cold_cost"] = entry.get("cold_cost", 0.0) + cold
             entry["tokens"] += tokens
             entry["cache_read"] += int(bucket.get("cache_read", 0))
             entry["days"][day] += cost
             entry["models"][model] += cost
             total_cost += cost
+            total_cold += cold
             total_tokens += tokens
             cache_read += int(bucket.get("cache_read", 0))
             print_ = tuple(int(bucket.get(f, 0)) for f in BUCKET_FIELDS)
@@ -193,11 +276,21 @@ def fleet_summary(days: Optional[int] = None,
         age = (now - ts).total_seconds() / 3600 if ts else float("inf")
         freshness.append((machine, ts, age, age > STALE_HOURS))
 
+    if paid is None:
+        try:
+            paid = float(os.environ.get("AI_MONTHLY_SUBSCRIPTION_USD", "0") or 0)
+        except ValueError:
+            paid = 0.0
+
+    cold_clamped, realistic_clamped, paid_clamped, absorbed = validate_and_clamp_accounting(
+        total_cold, total_cost, paid
+    )
+
     measured = exact_tokens + estimated_tokens
     return FleetSummary(
         machines=machines,
         days=sorted(days_seen),
-        total_cost=total_cost,
+        total_cost=realistic_clamped,
         total_tokens=total_tokens,
         cache_read=cache_read,
         confidence=(exact_tokens / measured) if measured else None,
@@ -205,6 +298,11 @@ def fleet_summary(days: Optional[int] = None,
         overlaps=overlaps,
         freshness=freshness,
         local=me,
+        cold_cost=cold_clamped,
+        paid_cost=paid_clamped,
+        absorbed_cost=absorbed,
+        exact_tokens=exact_tokens,
+        estimated_tokens=estimated_tokens,
     )
 
 
