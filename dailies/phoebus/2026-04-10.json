@@ -1,5 +1,5 @@
 {
-  "counter": "3c881c47eb1d",
+  "counter": "cfae0dd41682",
   "date": "2026-04-10",
   "estimated": {
     "cache_creation": 0,
@@ -11,11 +11,11 @@
   "exact": {
     "cache_creation": 0,
     "cache_read": 118912,
-    "input_tokens": 198164,
-    "output_tokens": 10789,
+    "input_tokens": 79252,
+    "output_tokens": 10124,
     "reasoning": 665
   },
-  "generated_at": "2026-08-05T06:29:35-04:00",
+  "generated_at": "2026-08-29T01:03:31-04:00",
   "generated_by": "claude-cli",
   "invocations": 12,
   "machine": "phoebus",
@@ -23,41 +23,67 @@
     "gpt-5.4": {
       "cache_creation": 0,
       "cache_read": 118912,
-      "input_tokens": 198164,
-      "output_tokens": 10789,
+      "input_tokens": 79252,
+      "output_tokens": 10124,
       "reasoning": 665
     }
   },
   "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.6001,
+      "distinct_sessions": 1,
+      "peak_context_used_percent": 10.3,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 2.0,
+          "peak_used_percent": 57.0,
+          "resets_at": 1775822652,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 9.0,
+          "peak_used_percent": 9.0,
+          "resets_at": 1776391354,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 208953,
+      "uncached_input_tokens": 79252
+    }
+  },
   "schema": 3,
   "sketch": [
-    "17aa78d2f03507c1",
-    "1ea9426a0e2049e1",
-    "25d8faf31ea8f9e5",
-    "36501130226aa494",
-    "44a7adcdef04ec18",
-    "46abea280af72a2a",
-    "4ee581d44f548394",
-    "5ac43b062990b7be",
-    "8f7be74a710ce025",
-    "9f05922cf7c6deee",
-    "b8e0e9fe1c87420f",
-    "e4f12c425ed36465"
+    "38e7c4c9ced1f392",
+    "5ac23d2b3c71181e",
+    "85e31ebb278e34e2",
+    "952305665c0c8903",
+    "a40e358e43c9b364",
+    "b0d9c300ee5ddfe3",
+    "b55f9c8e93ff49f3",
+    "c10c4b8ba9773040",
+    "cfdc64ca9b93cad1",
+    "eb1159e09ef851a0",
+    "ef26b11c9b8850b4",
+    "effee10ff1a51d9f"
   ],
   "sources": {
     "OpenAI Codex": {
       "cache_creation": 0,
       "cache_read": 118912,
-      "input_tokens": 198164,
-      "output_tokens": 10789,
+      "input_tokens": 79252,
+      "output_tokens": 10124,
       "reasoning": 665
     }
   },
   "totals": {
     "cache_creation": 0,
     "cache_read": 118912,
-    "input_tokens": 198164,
-    "output_tokens": 10789,
+    "input_tokens": 79252,
+    "output_tokens": 10124,
     "reasoning": 665
   }
 }

@@ -1,5 +1,5 @@
 {
-  "counter": "cfae0dd41682",
+  "counter": "3c881c47eb1d",
   "date": "2026-07-31",
   "estimated": {
     "cache_creation": 0,
@@ -15,7 +15,7 @@
     "output_tokens": 420577,
     "reasoning": 0
   },
-  "generated_at": "2026-08-29T01:03:31-04:00",
+  "generated_at": "2026-08-05T06:29:35-04:00",
   "generated_by": "claude-cli",
   "invocations": 562,
   "machine": "phoebus",
@@ -29,7 +29,6 @@
     }
   },
   "partial": false,
-  "provider_stats": {},
   "schema": 3,
   "sketch": [
     "007072e0dff687c7",

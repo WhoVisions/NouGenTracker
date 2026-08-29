@@ -1,0 +1,63 @@
+{
+  "counter": "3c881c47eb1d",
+  "date": "2026-04-10",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 118912,
+    "input_tokens": 198164,
+    "output_tokens": 10789,
+    "reasoning": 665
+  },
+  "generated_at": "2026-08-05T06:29:35-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 12,
+  "machine": "phoebus",
+  "models": {
+    "gpt-5.4": {
+      "cache_creation": 0,
+      "cache_read": 118912,
+      "input_tokens": 198164,
+      "output_tokens": 10789,
+      "reasoning": 665
+    }
+  },
+  "partial": false,
+  "schema": 3,
+  "sketch": [
+    "17aa78d2f03507c1",
+    "1ea9426a0e2049e1",
+    "25d8faf31ea8f9e5",
+    "36501130226aa494",
+    "44a7adcdef04ec18",
+    "46abea280af72a2a",
+    "4ee581d44f548394",
+    "5ac43b062990b7be",
+    "8f7be74a710ce025",
+    "9f05922cf7c6deee",
+    "b8e0e9fe1c87420f",
+    "e4f12c425ed36465"
+  ],
+  "sources": {
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 118912,
+      "input_tokens": 198164,
+      "output_tokens": 10789,
+      "reasoning": 665
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 118912,
+    "input_tokens": 198164,
+    "output_tokens": 10789,
+    "reasoning": 665
+  }
+}
