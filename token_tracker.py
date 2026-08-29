@@ -2620,6 +2620,8 @@ if __name__ == "__main__" and COMPARE_N:
 # Drafted on gemma4:31b-cloud (free lane); boundary math reviewed by Coach.
 # ---------------------------------------------------------------------------
 def print_analytics_dashboard(invocations, now):
+    import datetime as _dtm
+
     def humanize(n):
         n = int(n)
         if n == 0:
@@ -2846,7 +2848,6 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET or VALIDATE):
             if _r["dirty"]:
                 print("  --fix refused: commit the working tree first (dirty stamp).")
                 sys.exit(1)
-            from pathlib import Path as _Path
             _stale_days = sorted(d for _, d, _ in _r["stale"])
             _counter = _r["stale"][0][2][:12]
             _arch = _r["base"] / f"archive-{_counter}"
