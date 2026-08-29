@@ -1,10 +1,4 @@
 {
- "correction": {
-  "at": "2026-08-29T14:12:40-04:00",
-  "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-08-06.json",
-  "reason": "dailies captured 36.1% of actual August output tokens; regenerated from local transcripts",
-  "source": "~/.claude/projects/**/*.jsonl"
- },
  "counter": "cfae0dd41682",
  "date": "2026-08-06",
  "estimated": {
@@ -15,29 +9,29 @@
   "reasoning": 0
  },
  "exact": {
-  "cache_creation": 658322,
-  "cache_read": 8107449,
-  "input_tokens": 160,
-  "output_tokens": 62667,
+  "cache_creation": 314251,
+  "cache_read": 4190081,
+  "input_tokens": 80,
+  "output_tokens": 26728,
   "reasoning": 0
  },
- "generated_at": "2026-08-29T14:12:40-04:00",
+ "generated_at": "2026-08-29T01:32:15-04:00",
  "generated_by": "claude-cli",
- "invocations": 85,
+ "invocations": 42,
  "machine": "whoart",
  "models": {
   "claude-fable-5": {
-   "cache_creation": 391626,
-   "cache_read": 2128106,
-   "input_tokens": 26,
-   "output_tokens": 7945,
+   "cache_creation": 196208,
+   "cache_read": 1356378,
+   "input_tokens": 16,
+   "output_tokens": 4330,
    "reasoning": 0
   },
   "claude-opus-5": {
-   "cache_creation": 266696,
-   "cache_read": 5979343,
-   "input_tokens": 134,
-   "output_tokens": 54722,
+   "cache_creation": 118043,
+   "cache_read": 2833703,
+   "input_tokens": 64,
+   "output_tokens": 22398,
    "reasoning": 0
   }
  },

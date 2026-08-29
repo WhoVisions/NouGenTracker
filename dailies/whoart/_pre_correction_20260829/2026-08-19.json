@@ -1,29 +1,23 @@
 {
- "correction": {
-  "at": "2026-08-29T14:12:40-04:00",
-  "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-08-19.json",
-  "reason": "dailies captured 36.1% of actual August output tokens; regenerated from local transcripts",
-  "source": "~/.claude/projects/**/*.jsonl"
- },
  "counter": "cfae0dd41682",
  "date": "2026-08-19",
  "estimated": {
   "cache_creation": 0,
-  "cache_read": 0,
-  "input_tokens": 0,
-  "output_tokens": 0,
+  "cache_read": 9380052,
+  "input_tokens": 202781,
+  "output_tokens": 31287,
   "reasoning": 0
  },
  "exact": {
-  "cache_creation": 4467664,
-  "cache_read": 146820364,
-  "input_tokens": 22409,
-  "output_tokens": 608630,
-  "reasoning": 0
+  "cache_creation": 1757522,
+  "cache_read": 78547247,
+  "input_tokens": 353618,
+  "output_tokens": 271748,
+  "reasoning": 18362
  },
- "generated_at": "2026-08-29T14:12:40-04:00",
+ "generated_at": "2026-08-29T01:32:15-04:00",
  "generated_by": "claude-cli",
- "invocations": 703,
+ "invocations": 691,
  "machine": "whoart",
  "models": {
   "<synthetic>": {
@@ -34,18 +28,39 @@
    "reasoning": 0
   },
   "claude-opus-4-8": {
-   "cache_creation": 188655,
-   "cache_read": 6352459,
-   "input_tokens": 21213,
-   "output_tokens": 46382,
+   "cache_creation": 83156,
+   "cache_read": 2792900,
+   "input_tokens": 10142,
+   "output_tokens": 17810,
    "reasoning": 0
   },
   "claude-opus-5": {
-   "cache_creation": 4279009,
-   "cache_read": 140467905,
-   "input_tokens": 1196,
-   "output_tokens": 562248,
+   "cache_creation": 1674366,
+   "cache_read": 65933163,
+   "input_tokens": 548,
+   "output_tokens": 222935,
    "reasoning": 0
+  },
+  "gemini-3-flash-preview (estimated)": {
+   "cache_creation": 0,
+   "cache_read": 9380052,
+   "input_tokens": 202781,
+   "output_tokens": 31287,
+   "reasoning": 0
+  },
+  "gpt-5.6-luna": {
+   "cache_creation": 0,
+   "cache_read": 1190144,
+   "input_tokens": 101205,
+   "output_tokens": 2526,
+   "reasoning": 2435
+  },
+  "gpt-5.6-sol": {
+   "cache_creation": 0,
+   "cache_read": 8631040,
+   "input_tokens": 241723,
+   "output_tokens": 28477,
+   "reasoning": 15927
   }
  },
  "partial": false,

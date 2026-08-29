@@ -1,50 +1,51 @@
 {
- "correction": {
-  "at": "2026-08-29T14:12:40-04:00",
-  "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-08-04.json",
-  "reason": "dailies captured 36.1% of actual August output tokens; regenerated from local transcripts",
-  "source": "~/.claude/projects/**/*.jsonl"
- },
  "counter": "cfae0dd41682",
  "date": "2026-08-04",
  "estimated": {
   "cache_creation": 0,
-  "cache_read": 0,
-  "input_tokens": 0,
-  "output_tokens": 0,
+  "cache_read": 2275786,
+  "input_tokens": 12688,
+  "output_tokens": 10833,
   "reasoning": 0
  },
  "exact": {
-  "cache_creation": 14937195,
-  "cache_read": 315552094,
-  "input_tokens": 50273,
-  "output_tokens": 1274250,
+  "cache_creation": 5845046,
+  "cache_read": 152416618,
+  "input_tokens": 9918,
+  "output_tokens": 474419,
   "reasoning": 0
  },
- "generated_at": "2026-08-29T14:12:40-04:00",
+ "generated_at": "2026-08-29T01:32:15-04:00",
  "generated_by": "claude-cli",
- "invocations": 1357,
+ "invocations": 650,
  "machine": "whoart",
  "models": {
   "claude-fable-5": {
-   "cache_creation": 4024163,
-   "cache_read": 78143218,
-   "input_tokens": 2268,
-   "output_tokens": 396358,
+   "cache_creation": 1602431,
+   "cache_read": 34896696,
+   "input_tokens": 827,
+   "output_tokens": 147859,
    "reasoning": 0
   },
   "claude-opus-4-8": {
-   "cache_creation": 672869,
-   "cache_read": 12590940,
-   "input_tokens": 93,
-   "output_tokens": 101790,
+   "cache_creation": 235070,
+   "cache_read": 5508306,
+   "input_tokens": 41,
+   "output_tokens": 37303,
    "reasoning": 0
   },
   "claude-opus-5": {
-   "cache_creation": 10240163,
-   "cache_read": 224817936,
-   "input_tokens": 47912,
-   "output_tokens": 776102,
+   "cache_creation": 4007545,
+   "cache_read": 112011616,
+   "input_tokens": 9050,
+   "output_tokens": 289257,
+   "reasoning": 0
+  },
+  "gemini-3-flash-preview (estimated)": {
+   "cache_creation": 0,
+   "cache_read": 2275786,
+   "input_tokens": 12688,
+   "output_tokens": 10833,
    "reasoning": 0
   }
  },
