@@ -1,29 +1,29 @@
 {
  "correction": {
-  "at": "2026-08-29T14:12:40-04:00",
+  "at": "2026-08-29T14:18:33-04:00",
   "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-08-17.json",
   "reason": "dailies captured 36.1% of actual August output tokens; regenerated from local transcripts",
-  "source": "~/.claude/projects/**/*.jsonl"
+  "source": "claude-code ~/.claude/projects/**/*.jsonl (exact) + codex ~/.codex/**/*.jsonl (exact, cumulative-max per session) + antigravity conversation blobs (estimated, JSON-fragment floor only)"
  },
  "counter": "cfae0dd41682",
  "date": "2026-08-17",
  "estimated": {
   "cache_creation": 0,
   "cache_read": 0,
-  "input_tokens": 0,
-  "output_tokens": 0,
+  "input_tokens": 309760,
+  "output_tokens": 4302732,
   "reasoning": 0
  },
  "exact": {
   "cache_creation": 4156677,
-  "cache_read": 103195981,
-  "input_tokens": 5565,
-  "output_tokens": 450934,
+  "cache_read": 104181197,
+  "input_tokens": 1205143,
+  "output_tokens": 456846,
   "reasoning": 0
  },
- "generated_at": "2026-08-29T14:12:40-04:00",
+ "generated_at": "2026-08-29T14:18:33-04:00",
  "generated_by": "claude-cli",
- "invocations": 537,
+ "invocations": 538,
  "machine": "whoart",
  "models": {
   "<synthetic>": {
@@ -45,6 +45,13 @@
    "cache_read": 36828614,
    "input_tokens": 3381,
    "output_tokens": 268728,
+   "reasoning": 0
+  },
+  "codex": {
+   "cache_creation": 0,
+   "cache_read": 985216,
+   "input_tokens": 1199578,
+   "output_tokens": 5912,
    "reasoning": 0
   }
  },

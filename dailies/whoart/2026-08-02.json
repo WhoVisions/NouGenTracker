@@ -1,9 +1,9 @@
 {
  "correction": {
-  "at": "2026-08-29T14:12:40-04:00",
+  "at": "2026-08-29T14:18:33-04:00",
   "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-08-02.json",
   "reason": "dailies captured 36.1% of actual August output tokens; regenerated from local transcripts",
-  "source": "~/.claude/projects/**/*.jsonl"
+  "source": "claude-code ~/.claude/projects/**/*.jsonl (exact) + codex ~/.codex/**/*.jsonl (exact, cumulative-max per session) + antigravity conversation blobs (estimated, JSON-fragment floor only)"
  },
  "counter": "cfae0dd41682",
  "date": "2026-08-02",
@@ -21,7 +21,7 @@
   "output_tokens": 1674678,
   "reasoning": 0
  },
- "generated_at": "2026-08-29T14:12:40-04:00",
+ "generated_at": "2026-08-29T14:18:33-04:00",
  "generated_by": "claude-cli",
  "invocations": 1483,
  "machine": "whoart",
