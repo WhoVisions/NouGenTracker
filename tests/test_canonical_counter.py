@@ -8,8 +8,6 @@ totals that disagreed by more than half the real volume.
 import json
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 import fleet_summary as fs
 
 
