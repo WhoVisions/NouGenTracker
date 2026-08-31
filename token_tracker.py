@@ -50,6 +50,10 @@ MONTH = None
 BY_PROVIDER = False
 RANGE_START = None
 RANGE_END = None
+# Did the caller actually name a window? DAYS always holds a value (its default,
+# and --export/--lanes widen it), so DAYS alone cannot answer that. --fleet needs
+# the distinction: unwindowed means all published history, not "the default 30".
+DAYS_EXPLICIT = False
 COMPARE_N = None
 LANES = False
 EXPORT = False
@@ -141,6 +145,10 @@ if "--demo-tc" not in sys.argv and __name__ == "__main__":
         DAYS = _a.weeks * 7
     elif _a.days_pos is not None:
         DAYS = _a.days_pos
+
+    DAYS_EXPLICIT = any(v is not None for v in
+                        (_a.days, _a.weeks, _a.days_pos, _a.month,
+                         _a.start, _a.end))
 
     # --compare widens the collection window so both periods are gathered (>= 2N days).
     if COMPARE_N is not None and COMPARE_N > 0:
@@ -2906,10 +2914,21 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET or VALIDATE):
     if FLEET:
         # model_bill injected rather than imported, so fleet_dailies stays free
         # of this module's import cost.
-        _agg = _fd.aggregate(_fd.load_fleet(), price_fn=model_bill)
+        # The window the caller actually asked for. --fleet used to load every
+        # published day regardless of --days/--start/--end, so a 3-day and a
+        # 31-day request returned byte-identical totals while echoing the
+        # requested period back - a silent wrong answer, not an error.
+        _f_since = RANGE_START or (CUTOFF.date().isoformat() if DAYS_EXPLICIT else None)
+        _f_until = RANGE_END
+        _agg = _fd.aggregate(
+            _fd.load_fleet(since=_f_since, until=_f_until), price_fn=model_bill
+        )
+        _f_window = (f"{_f_since or 'first published'} -> {_f_until or 'today'}"
+                     if (_f_since or _f_until) else "all published history")
         print()
         print("=" * 70)
         print(f"Fleet totals — {_agg['machine_count']} machine(s), {_agg['day_count']} day(s)")
+        print(f"window: {_f_window}")
         print("=" * 70)
         if not _agg["machines"]:
             print("  no dailies published yet — run --export, then push")

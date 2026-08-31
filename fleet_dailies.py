@@ -617,8 +617,21 @@ def export_days(
 
 # --- aggregate ------------------------------------------------------------
 
-def load_fleet(dailies_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    """Every daily record every machine has published into this clone."""
+def load_fleet(dailies_dir: Optional[Path] = None,
+               since: Optional[str] = None,
+               until: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Daily records published into this clone, optionally windowed.
+
+    `since`/`until` are inclusive ISO dates (YYYY-MM-DD). They are compared as
+    strings because that is exactly what the records store and ISO dates sort
+    lexically; parsing them into datetimes would add a failure mode without
+    changing a single ordering. Omit both for all published history.
+
+    Windowing lives HERE rather than in the caller because a caller that loads
+    everything and filters afterwards is one forgotten filter away from
+    silently reporting the wrong period - which is the defect this parameter
+    exists to close (--fleet ignored --days entirely until 2026-08-31).
+    """
     root = dailies_dir or DAILIES_DIR
     if not root.exists():
         return []
@@ -636,6 +649,17 @@ def load_fleet(dailies_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
         # Trust the directory over the field: the path is what git merged, the
         # field is what some other box claimed about itself.
         record["machine"] = path.parent.name
+        # A record with no date cannot be placed in a window. Dropping it when
+        # one is requested is the honest move: including it would silently pad
+        # a bounded report with an unbounded row.
+        if since or until:
+            day = record.get("date")
+            if not isinstance(day, str):
+                continue
+            if since and day < since:
+                continue
+            if until and day > until:
+                continue
         records.append(record)
     return records
 

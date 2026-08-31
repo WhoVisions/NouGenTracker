@@ -498,3 +498,52 @@ def test_a_dirty_counter_does_not_collide_with_its_clean_form():
     aggregator grouping by counter never merges them."""
     clean = fd.counter_fingerprint()
     assert clean + fd.DIRTY_SUFFIX != clean
+
+
+# --- windowing ------------------------------------------------------------
+
+def _publish_dated(root, machine, day):
+    """Minimal well-formed daily record on disk, addressed by machine and day."""
+    d = root / machine
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{day}.json").write_text(
+        json.dumps({"schema": fd.SCHEMA_VERSION, "date": day, "machine": machine}),
+        encoding="utf-8",
+    )
+
+
+def test_load_fleet_windows_by_date(tmp_path):
+    """The defect this pins: --fleet ignored --days entirely, so a 3-day and a
+    31-day request returned byte-identical totals while echoing the requested
+    period back. A wrong answer that looks exactly like a right one."""
+    for day in ("2026-08-01", "2026-08-15", "2026-08-30"):
+        _publish_dated(tmp_path, "blade1tb", day)
+
+    assert len(fd.load_fleet(tmp_path)) == 3
+    narrow = fd.load_fleet(tmp_path, since="2026-08-29")
+    wide = fd.load_fleet(tmp_path, since="2026-07-01")
+    assert len(narrow) == 1 and len(wide) == 3, "a window must change the result"
+    assert narrow != wide
+
+
+def test_window_bounds_are_inclusive(tmp_path):
+    """Callers pass the day they mean, not the day before it."""
+    _publish_dated(tmp_path, "whoart", "2026-08-10")
+    assert len(fd.load_fleet(tmp_path, since="2026-08-10")) == 1
+    assert len(fd.load_fleet(tmp_path, until="2026-08-10")) == 1
+    assert len(fd.load_fleet(tmp_path, since="2026-08-11")) == 0
+    assert len(fd.load_fleet(tmp_path, until="2026-08-09")) == 0
+
+
+def test_undated_record_is_dropped_only_when_a_window_is_asked_for(tmp_path):
+    """A record with no date cannot be placed in a window. Including it would
+    silently pad a bounded report with an unbounded row; excluding it from an
+    UNbounded report would lose data nobody asked to filter."""
+    d = tmp_path / "phoebus"
+    d.mkdir(parents=True)
+    (d / "undated.json").write_text(
+        json.dumps({"schema": fd.SCHEMA_VERSION, "machine": "phoebus"}),
+        encoding="utf-8",
+    )
+    assert len(fd.load_fleet(tmp_path)) == 1
+    assert len(fd.load_fleet(tmp_path, since="2026-01-01")) == 0
