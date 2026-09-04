@@ -81,9 +81,17 @@ def log(message: str) -> None:
 # Resolution — env, then probe, never a constant
 # ---------------------------------------------------------------------------
 
+def _has_tracker(candidate: Path) -> bool:
+    """A missing or untraversable mount is a failed probe, not a crash."""
+    try:
+        return (candidate / "token_tracker.py").exists()
+    except OSError:
+        return False
+
+
 def tracker_dir() -> Optional[Path]:
     explicit = os.environ.get("NOUGENTRACKER_DIR", "").strip()
-    if explicit and (Path(explicit) / "token_tracker.py").exists():
+    if explicit and _has_tracker(Path(explicit)):
         return Path(explicit)
     home = Path.home()
     for candidate in (
@@ -95,7 +103,7 @@ def tracker_dir() -> Optional[Path]:
         Path.cwd() / "NouGenTracker",
         Path.cwd(),
     ):
-        if (candidate / "token_tracker.py").exists():
+        if _has_tracker(candidate):
             return candidate
     return None
 

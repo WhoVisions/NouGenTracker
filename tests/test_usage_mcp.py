@@ -249,6 +249,24 @@ def test_provenance_does_not_create_cache_directory(monkeypatch, tmp_path):
     assert not (tmp_path / "cache").exists()
 
 
+def test_tracker_probe_skips_an_untraversable_mount(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    monkeypatch.delenv("NOUGENTRACKER_DIR")
+    outpost = tmp_path / "Outpost" / "NouGenTracker"
+    outpost.mkdir(parents=True)
+    (outpost / "token_tracker.py").write_text("# tracker", encoding="utf-8")
+    monkeypatch.setattr(mod.Path, "home", lambda: tmp_path)
+    original_exists = mod.Path.exists
+
+    def flaky_exists(path):
+        if "Watchtower" in path.parts:
+            raise OSError("untrusted mount point")
+        return original_exists(path)
+
+    monkeypatch.setattr(mod.Path, "exists", flaky_exists)
+    assert mod.tracker_dir() == outpost
+
+
 # --- failure behaviour ------------------------------------------------------
 
 def test_a_missing_tracker_is_content_not_a_protocol_error(monkeypatch, tmp_path):
