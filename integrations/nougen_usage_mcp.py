@@ -95,10 +95,12 @@ def tracker_dir() -> Optional[Path]:
         return Path(explicit)
     home = Path.home()
     for candidate in (
-        home / ".nougen" / "tracker",
         home / "Watchtower" / "NouGen" / "NouGenTracker",
         home / "The Observatory" / "NouGenTracker",
         home / "Outpost" / "NouGenTracker",
+        # A managed mirror is useful when no machine checkout exists, but it
+        # must not shadow the checkout that actually publishes this node.
+        home / ".nougen" / "tracker",
         home / "NouGenTracker",
         Path.cwd() / "NouGenTracker",
         Path.cwd(),

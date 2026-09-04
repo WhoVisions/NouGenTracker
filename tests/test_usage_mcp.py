@@ -267,6 +267,20 @@ def test_tracker_probe_skips_an_untraversable_mount(monkeypatch, tmp_path):
     assert mod.tracker_dir() == outpost
 
 
+def test_machine_checkout_takes_precedence_over_managed_mirror(
+        monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    monkeypatch.delenv("NOUGENTRACKER_DIR")
+    watchtower = tmp_path / "Watchtower" / "NouGen" / "NouGenTracker"
+    mirror = tmp_path / ".nougen" / "tracker"
+    for root in (watchtower, mirror):
+        root.mkdir(parents=True)
+        (root / "token_tracker.py").write_text("# tracker", encoding="utf-8")
+    monkeypatch.setattr(mod.Path, "home", lambda: tmp_path)
+
+    assert mod.tracker_dir() == watchtower
+
+
 # --- failure behaviour ------------------------------------------------------
 
 def test_a_missing_tracker_is_content_not_a_protocol_error(monkeypatch, tmp_path):
