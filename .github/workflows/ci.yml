@@ -23,7 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Lint (pyflakes)
-        run: python -m pyflakes token_tracker.py fleet audit_daemon.py
+        run: >-
+          python -m pyflakes token_tracker.py fleet audit_daemon.py
+          tracker_live.py public_surface.py integrations/nougen_usage_mcp.py
       - name: Test
         run: python -m pytest -q
       - name: CLI smoke

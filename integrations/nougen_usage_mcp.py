@@ -47,8 +47,18 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+try:
+    from tracker_live import (DEFAULT_STALE_AFTER_DAYS, expected_machines,
+                              inspect_tracker)
+except ModuleNotFoundError:
+    # In the repository this server lives one directory below tracker_live.py.
+    # Fleet installs place the two stdlib-only files beside each other.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tracker_live import (DEFAULT_STALE_AFTER_DAYS, expected_machines,
+                              inspect_tracker)
+
 SERVER_NAME = "nougen-usage"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 #: Protocol revisions this server implements. On initialize we echo the
 #: client's version when we know it, and otherwise answer with our newest —
@@ -77,7 +87,10 @@ def tracker_dir() -> Optional[Path]:
         return Path(explicit)
     home = Path.home()
     for candidate in (
+        home / ".nougen" / "tracker",
         home / "Watchtower" / "NouGen" / "NouGenTracker",
+        home / "The Observatory" / "NouGenTracker",
+        home / "Outpost" / "NouGenTracker",
         home / "NouGenTracker",
         Path.cwd() / "NouGenTracker",
         Path.cwd(),
@@ -87,10 +100,11 @@ def tracker_dir() -> Optional[Path]:
     return None
 
 
-def cache_dir() -> Path:
+def cache_dir(create: bool = True) -> Path:
     path = Path(os.environ.get(
         "NOUGEN_USAGE_CACHE_DIR", str(Path.home() / ".nougen" / "cache")))
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -371,7 +385,9 @@ def tool_provenance() -> Tuple[str, Dict[str, Any]]:
         **context,
         "resolved_by": ("NOUGENTRACKER_DIR" if os.environ.get("NOUGENTRACKER_DIR")
                         else "probe"),
-        "cache_dir": str(cache_dir()),
+        # Reporting the configured path must not create it. Provenance and live
+        # status are safe to call from an observe-only session.
+        "cache_dir": str(cache_dir(create=False)),
         "cache_ttl_seconds": CACHE_TTL_S,
         "scan_timeout_seconds": SCAN_TIMEOUT_S,
         "server_version": VERSION,
@@ -382,6 +398,28 @@ def tool_provenance() -> Tuple[str, Dict[str, Any]]:
             "~/.gemini/antigravity*/brain/**/transcript.jsonl",
     }
     return json.dumps(data, indent=2), data
+
+
+def tool_live_status(
+        stale_after_days: int = DEFAULT_STALE_AFTER_DAYS
+        ) -> Tuple[str, Dict[str, Any]]:
+    """Inspect published aggregate metadata without invoking the tracker."""
+    root = tracker_dir()
+    if root is None:
+        raise TrackerError(
+            "cannot find the NouGenTracker checkout for passive status. Set "
+            "NOUGENTRACKER_DIR to its location on this machine.")
+    data = inspect_tracker(root, expected_machines(), stale_after_days)
+    rows = [f"{item['machine']}: {item['state']} "
+            f"({item['latest_day'] or 'no daily'})"
+            for item in data["machines"]]
+    text = (
+        "PASSIVE publication status — " + "; ".join(rows) + ".\n"
+        "No raw logs were read, no files were written, no network was used, "
+        "and no tracker scan was started. This is freshness, not token usage. "
+        "A missing or stale machine is unknown, never zero."
+    )
+    return text, data
 
 
 ToolFn = Callable[..., Tuple[str, Dict[str, Any]]]
@@ -444,14 +482,32 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "wrong or needs sourcing."),
         "schema": {"type": "object", "properties": {},
                    "additionalProperties": False},
+        "open_world": False,
+    },
+    "tracker_live_status": {
+        "fn": tool_live_status,
+        "title": "Passive tracker publication status",
+        "description": (
+            "Check whether expected machines have recently published aggregate "
+            "dailies. This bounded metadata-only path never scans raw logs, "
+            "writes files, starts the tracker, or uses the network. It reports "
+            "freshness only, never token usage."),
+        "schema": {"type": "object", "properties": {
+            "stale_after_days": {
+                "type": "integer", "minimum": 0, "maximum": 365,
+                "description": ("maximum acceptable age of the latest daily "
+                                f"(default {DEFAULT_STALE_AFTER_DAYS})")}},
+            "additionalProperties": False},
+        "open_world": False,
     },
 }
 
-#: Every tool reads. None mutate, none reach the network beyond the local
-#: filesystem. Declaring that lets a client skip a confirmation prompt it would
-#: otherwise be right to show.
+#: All tools are logically read-only. Regular usage tools may consult local
+#: agent RPCs or public pricing sources through token_tracker.py, so their
+#: descriptors honestly carry openWorldHint=True. The passive status and
+#: provenance tools override it because they are closed-world metadata reads.
 ANNOTATIONS = {"readOnlyHint": True, "destructiveHint": False,
-               "idempotentHint": True, "openWorldHint": False}
+               "idempotentHint": True}
 
 RESOURCES = [{
     "uri": "nougen://usage/provenance",
@@ -469,7 +525,8 @@ def tool_descriptor(name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
         "description": spec["description"],
         "inputSchema": spec["schema"],
         "outputSchema": _OUT,
-        "annotations": dict(ANNOTATIONS, title=spec["title"]),
+        "annotations": dict(ANNOTATIONS, title=spec["title"],
+                            openWorldHint=spec.get("open_world", True)),
     }
 
 
@@ -509,10 +566,21 @@ def call_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     spec = TOOLS.get(name)
     if spec is None:
         raise KeyError(name)
+    if not isinstance(args, dict):
+        raise ValueError("tool arguments must be an object")
     allowed = set((spec["schema"].get("properties") or {}))
     unknown = set(args) - allowed
     if unknown:
         raise ValueError(f"unknown argument(s): {', '.join(sorted(unknown))}")
+    for key, value in args.items():
+        rule = spec["schema"]["properties"][key]
+        if rule.get("type") == "integer":
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{key} must be an integer")
+            if "minimum" in rule and value < rule["minimum"]:
+                raise ValueError(f"{key} must be at least {rule['minimum']}")
+            if "maximum" in rule and value > rule["maximum"]:
+                raise ValueError(f"{key} must be at most {rule['maximum']}")
     text, data = spec["fn"](**args)
     return {"content": [{"type": "text", "text": text}],
             "structuredContent": data, "isError": False}
@@ -534,7 +602,9 @@ def handle(message: Dict[str, Any]) -> None:
                 "Answer token, spend and burn-rate questions with these tools "
                 "rather than estimating. State that Antigravity figures are "
                 "estimated, that cost is a shadow bill and not an invoice, and "
-                "that cache-reads dominate the token count but not the cost."),
+                "that cache-reads dominate the token count but not the cost. "
+                "Use tracker_live_status for non-invasive publication health; "
+                "it is freshness only and never proves zero usage."),
         })
     elif method in ("notifications/initialized", "initialized", "ping"):
         if method == "ping" and msg_id is not None:
@@ -629,7 +699,8 @@ def selftest() -> int:
               and d["annotations"]["readOnlyHint"] for d in descriptors))
     check("tool names are stable", sorted(TOOLS) == sorted([
         "fleet_token_usage", "machine_token_usage", "my_token_usage",
-        "token_cost_by_model", "token_usage_provenance"]))
+        "token_cost_by_model", "token_usage_provenance",
+        "tracker_live_status"]))
     try:
         call_tool("my_token_usage", {"nonsense": 1})
         check("unknown arguments are rejected", False)
@@ -654,13 +725,10 @@ def selftest() -> int:
           parse_days("2026-07-31           1,854       748,873     "
                      "259,307,728             0")[0]["output_tokens"] == 748873)
     if root is not None:
-        try:
-            text, data = tool_fleet_usage()
-            check("fleet tool answers", bool(text))
-            check("fleet answer carries provenance",
-                  "cache_age_seconds" in data and "as_of" in data)
-        except TrackerError as exc:
-            check("fleet tool answers", False, str(exc))
+        text, data = tool_live_status()
+        check("passive live-status tool answers", bool(text))
+        check("passive live-status declares no side effects",
+              not any(data["side_effects"].values()))
     print(f"\n{len(failures)} failure(s)")
     return 1 if failures else 0
 

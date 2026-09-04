@@ -23,9 +23,16 @@ looked plausible and was double what it should have been.
 | "what did the fleet spend?" / comparing machines | `fleet_token_usage` |
 | "which model costs the most?" | `token_cost_by_model` |
 | a number looks wrong, or needs sourcing | `token_usage_provenance` |
+| "is Tracker live/fresh?" | `tracker_live_status` |
 
 Default window is 7 days; pass `days` when the question implies another span.
 `fleet_token_usage` with no `days` returns all published history.
+
+`tracker_live_status` is the safe health check. It reads only the newest
+published aggregate metadata for each expected machine. It never scans raw
+logs, starts the tracker, writes a cache or daily, uses the network, or restarts
+anything. Its answer is freshness, not consumption: missing or stale means
+unknown and must never be reported as zero usage.
 
 ## Three things to say out loud when you report
 

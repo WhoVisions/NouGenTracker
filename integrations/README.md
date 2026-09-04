@@ -37,6 +37,7 @@ skills directory — for Antigravity that is
 | `fleet_token_usage` | every machine that has published dailies |
 | `token_cost_by_model` | which model is costing the most |
 | `token_usage_provenance` | where the numbers came from, and which are estimated |
+| `tracker_live_status` | passive publication freshness, without a tracker scan |
 
 Each returns **prose to quote and a validated object to compute with** —
 `structuredContent` alongside the text, with `outputSchema` declared. Text-only
@@ -65,9 +66,16 @@ provenance was dropped is indistinguishable from one that was invented.
 **stdout belongs to the protocol.** All logging goes to stderr. One stray print
 corrupts the stream and the failure looks like a broken client.
 
-**Read-only, and it says so.** Every tool declares `readOnlyHint`,
-`idempotentHint` and `openWorldHint: false`, so a client can skip a confirmation
-prompt it would otherwise be right to show.
+**Side effects are described honestly.** Every tool declares `readOnlyHint` and
+`idempotentHint`. Regular usage tools carry `openWorldHint: true` because the
+authoritative tracker may consult local agent RPCs or public pricing sources.
+Provenance and passive live status carry `openWorldHint: false`.
+
+**Live status is non-invasive by construction.** `tracker_live_status` does not
+call `token_tracker.py` or the usage cache. It reads at most one bounded,
+aggregate daily per expected machine and performs no writes, raw-log reads,
+network calls, subprocess scans, publishing, or service restarts. It answers
+only whether publication is fresh; it does not answer how much a machine used.
 
 **Protocol versions are negotiated, not assumed.** `2025-06-18`, `2025-03-26` and
 `2024-11-05` are all answered correctly — one binary serving four CLIs that
@@ -83,9 +91,9 @@ JSON-RPC error the user never sees.
 python integrations/nougen_usage_mcp.py --selftest
 ```
 
-Thirteen checks covering protocol negotiation, schema/annotation completeness,
-argument rejection, unknown-tool rejection, the report parsers, and one live
-end-to-end tool call.
+Checks cover protocol negotiation, schema/annotation completeness, argument
+rejection, unknown-tool rejection, the report parsers, and a passive
+end-to-end publication-status call. Self-test does not start a usage scan.
 
 ## What the skill enforces
 

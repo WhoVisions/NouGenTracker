@@ -13,17 +13,27 @@ name: Publish NouGenTracker dashboard to Hugging Face
 # Until both are configured the job skips gracefully.
 
 on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   sync:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
+      - name: Validate public daily surface
+        run: python3 public_surface.py
       - name: Upload snapshot to Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -45,13 +55,21 @@ jobs:
             printf '%s\n' '# NouGenTracker dashboard' \
               'Live fleet usage rollup published from the canonical NouGenTracker dailies.'
           } > hf-space/README.md
-          printf '%s\n' "${GITHUB_SHA}" > hf-space/.deploy_sha
+          printf '%s\n' "${SOURCE_SHA}" > hf-space/.deploy_sha
           # The connector enumerates this tree through the Hub contents API and
           # reads individual records from the static Space host.  A UI-only
           # snapshot makes the dashboard look healthy while every tracker_* MCP
           # call fails with `tracker tree dailies: 404`.
           mkdir -p hf-space/dailies
-          cp -R dailies/. hf-space/dailies/
+          # Only canonical machine/date records belong on the live surface.
+          # Archives and local repair backups remain outside the Space even if
+          # someone accidentally leaves one in the repository.
+          while IFS= read -r -d '' source; do
+            relative="${source#dailies/}"
+            mkdir -p "hf-space/dailies/$(dirname "$relative")"
+            cp "$source" "hf-space/dailies/$relative"
+          done < <(find dailies -mindepth 2 -maxdepth 2 -type f \
+            -name '????-??-??.json' -print0)
           DAILY_COUNT="$(find hf-space/dailies -type f -name '*.json' | wc -l | tr -d '[:space:]')"
           if [ "${DAILY_COUNT}" -eq 0 ]; then
             echo "::error::Refusing to deploy a tracker snapshot without public dailies."
@@ -65,7 +83,7 @@ jobs:
           import json, os
           from datetime import datetime, timezone
           payload = {
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["SOURCE_SHA"],
               "generated_at": datetime.now(timezone.utc).isoformat(),
               "dashboard": "index.html",
               "data_root": "dailies",
@@ -84,9 +102,9 @@ jobs:
               repo_id=os.environ["HF_SPACE"],
               repo_type="space",
               delete_patterns=["*"],
-              commit_message="Space deploy: snapshot of " + os.environ["GITHUB_SHA"],
+              commit_message="Space deploy: snapshot of " + os.environ["SOURCE_SHA"],
           )
-          print("uploaded snapshot", os.environ["GITHUB_SHA"])
+          print("uploaded snapshot", os.environ["SOURCE_SHA"])
           PYEOF
       - name: Verify dashboard serves the new snapshot
         env:
@@ -100,10 +118,10 @@ jobs:
           HOST="$(echo "$HF_SPACE" | tr '[:upper:]' '[:lower:]' | tr '/_.' '---')"
           URL="https://${HOST}.static.hf.space/.deploy_sha"
           TREE_URL="https://huggingface.co/api/spaces/${HF_SPACE}/tree/main/dailies"
-          echo "Waiting for ${URL} to report ${GITHUB_SHA}..."
+          echo "Waiting for ${URL} to report ${SOURCE_SHA}..."
           for i in $(seq 1 30); do
             body=$(curl -sS -m 15 -H "Authorization: Bearer ${HF_TOKEN}" "$URL" 2>/dev/null || true)
-            if [ "$(echo "$body" | tr -d '[:space:]')" = "${GITHUB_SHA}" ]; then
+            if [ "$(echo "$body" | tr -d '[:space:]')" = "${SOURCE_SHA}" ]; then
               DASHBOARD_URL="https://${HOST}.static.hf.space/index.html"
               dashboard=$(curl -sS -m 15 "$DASHBOARD_URL" 2>/dev/null || true)
               tree=$(curl -sS -m 15 -H "Authorization: Bearer ${HF_TOKEN}" "$TREE_URL" 2>/dev/null || true)

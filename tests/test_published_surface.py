@@ -14,55 +14,23 @@ message is the review prompt.
 """
 
 import json
-import re
 from pathlib import Path
 
 import pytest
 
+from public_surface import ALLOWED_TOP_LEVEL, FORBIDDEN, published, validate
+
 REPO = Path(__file__).resolve().parents[1]
-DAILIES = REPO / "dailies"
-
-# Reviewed and deliberately public: aggregate counts, model names, and the
-# labels needed to tell machines apart when summing.
-ALLOWED_TOP_LEVEL = {
-    "counter",       # counting-version fingerprint; refuses cross-version sums
-    "date",
-    "estimated",     # token counts (ints)
-    "exact",         # token counts (ints)
-    "generated_at",
-    "generated_by",  # agent lane, e.g. "claude-cli"
-    "invocations",   # int
-    "machine",       # fleet label, e.g. "whoart"
-    "models",        # model name -> token counts
-    "partial",
-    "provider_stats", # privacy-safe provider aggregates (no session ids)
-    "schema",
-    "sketch",
-    "sources",
-    "totals",
-}
-
-# Shapes that must never appear anywhere in a published record, at any depth.
-FORBIDDEN = [
-    (re.compile(r"[A-Za-z]:\\\\|[A-Za-z]:/"), "a filesystem path from someone's machine"),
-    (re.compile(r"/Users/|/home/|/root/"), "a home directory path"),
-    (re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}"), "a session or conversation id"),
-    (re.compile(r"sk-[A-Za-z0-9]|Bearer\s+[A-Za-z0-9]|api[_-]?key\s*[:=]", re.I), "a credential"),
-    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+"), "an email address"),
-    (re.compile(r"\.jsonl|transcript", re.I), "a transcript filename"),
-]
-
-
-def published():
-    return sorted(DAILIES.glob("*/*.json")) if DAILIES.is_dir() else []
+PUBLISHED = published(REPO)
 
 
 def test_there_is_something_to_check():
     """A silent zero-file pass would make every test below vacuous."""
-    assert published(), "no published dailies found — this suite would prove nothing"
+    assert PUBLISHED, "no published dailies found — this suite would prove nothing"
+    assert validate(REPO) == []
 
 
-@pytest.mark.parametrize("path", published(), ids=lambda p: f"{p.parent.name}/{p.name}")
+@pytest.mark.parametrize("path", PUBLISHED, ids=lambda p: str(p.relative_to(REPO)))
 def test_only_reviewed_fields_are_published(path):
     record = json.loads(path.read_text(encoding="utf-8"))
     unexpected = set(record) - ALLOWED_TOP_LEVEL
@@ -73,7 +41,7 @@ def test_only_reviewed_fields_are_published(path):
     )
 
 
-@pytest.mark.parametrize("path", published(), ids=lambda p: f"{p.parent.name}/{p.name}")
+@pytest.mark.parametrize("path", PUBLISHED, ids=lambda p: str(p.relative_to(REPO)))
 def test_no_private_shapes_anywhere_in_the_record(path):
     blob = path.read_text(encoding="utf-8")
     for pattern, what in FORBIDDEN:
@@ -83,7 +51,7 @@ def test_no_private_shapes_anywhere_in_the_record(path):
         )
 
 
-@pytest.mark.parametrize("path", published(), ids=lambda p: f"{p.parent.name}/{p.name}")
+@pytest.mark.parametrize("path", PUBLISHED, ids=lambda p: str(p.relative_to(REPO)))
 def test_counts_are_numbers_not_prose(path):
     """Token fields carrying strings would be a sign the exporter changed shape
     under us — and prose is where free text hides."""
