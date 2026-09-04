@@ -108,13 +108,16 @@ def test_every_tool_declares_schema_output_and_annotations(monkeypatch, tmp_path
     out = _rpc(mod, monkeypatch,
                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     tools = out[0]["result"]["tools"]
-    assert len(tools) == 5
+    assert len(tools) == 6
     for tool in tools:
         assert tool["inputSchema"]["type"] == "object"
         assert tool["outputSchema"]["type"] == "object"
         assert tool["annotations"]["readOnlyHint"] is True
-        assert tool["annotations"]["openWorldHint"] is False
         assert tool["description"] and tool["title"]
+    by_name = {tool["name"]: tool for tool in tools}
+    assert by_name["tracker_live_status"]["annotations"]["openWorldHint"] is False
+    assert by_name["token_usage_provenance"]["annotations"]["openWorldHint"] is False
+    assert by_name["fleet_token_usage"]["annotations"]["openWorldHint"] is True
 
 
 def test_input_schemas_refuse_extra_properties(monkeypatch, tmp_path):
@@ -131,6 +134,16 @@ def test_unknown_tool_and_unknown_argument_are_rejected(monkeypatch, tmp_path):
     assert _call(mod, monkeypatch, "nope")["error"]["code"] == mod.METHOD_NOT_FOUND
     bad = _call(mod, monkeypatch, "my_token_usage", {"day": 3})
     assert bad["error"]["code"] == mod.INVALID_PARAMS
+
+
+def test_argument_types_and_bounds_are_enforced_server_side(monkeypatch, tmp_path):
+    """Schemas guide clients, but an untrusted client can skip validation."""
+    mod = _load(monkeypatch, tmp_path)
+    for args in ({"days": "7"}, {"days": True}, {"days": 0}, {"days": 999999}):
+        out = _call(mod, monkeypatch, "fleet_token_usage", args)
+        assert out["error"]["code"] == mod.INVALID_PARAMS
+    out = _call(mod, monkeypatch, "tracker_live_status", {"stale_after_days": -1})
+    assert out["error"]["code"] == mod.INVALID_PARAMS
 
 
 # --- answers ----------------------------------------------------------------
@@ -207,6 +220,33 @@ def test_empty_report_does_not_pretend_to_be_zero_usage(monkeypatch, tmp_path):
     assert "branch" in text
     assert out["structuredContent"]["machines"] == []
     assert "dailies_machines" in out["structuredContent"]
+
+
+def test_passive_live_status_never_runs_tracker_or_creates_cache(
+        monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    daily = tmp_path / "dailies" / "phoebus" / "2026-09-04.json"
+    daily.parent.mkdir(parents=True)
+    daily.write_text(json.dumps({
+        "date": "2026-09-04", "machine": "phoebus", "partial": False,
+        "generated_at": "2026-09-04T05:00:00Z",
+    }), encoding="utf-8")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("passive status invoked the usage tracker")
+
+    monkeypatch.setattr(mod, "run_tracker", forbidden)
+    out = _call(mod, monkeypatch, "tracker_live_status")
+    data = out["result"]["structuredContent"]
+    assert data["mode"] == "passive_metadata_only"
+    assert not any(data["side_effects"].values())
+    assert not (tmp_path / "cache").exists()
+
+
+def test_provenance_does_not_create_cache_directory(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    _call(mod, monkeypatch, "token_usage_provenance")
+    assert not (tmp_path / "cache").exists()
 
 
 # --- failure behaviour ------------------------------------------------------

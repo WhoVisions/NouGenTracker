@@ -1,10 +1,4 @@
 {
- "correction": {
-  "at": "2026-08-29T14:18:33-04:00",
-  "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-08-08.json",
-  "reason": "dailies captured 36.1% of actual August output tokens; regenerated from local transcripts",
-  "source": "claude-code ~/.claude/projects/**/*.jsonl (exact) + codex ~/.codex/**/*.jsonl (exact, cumulative-max per session) + antigravity conversation blobs (estimated, JSON-fragment floor only)"
- },
  "counter": "cfae0dd41682",
  "date": "2026-08-08",
  "estimated": {

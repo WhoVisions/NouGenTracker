@@ -110,6 +110,26 @@ To publish on a schedule, run `--publish` from cron or launchd on each box. It
 is deliberately not a GitHub Action: a runner has no access to the agent logs on
 your machines, so the export has to happen where the logs are.
 
+### Passive live status
+
+The live health path is deliberately separate from collection and publishing:
+
+```bash
+python3 tracker_live.py
+python3 tracker_live.py --json
+```
+
+It lists canonical `dailies/<machine>/<date>.json` names and reads at most the
+newest aggregate record for each expected machine. It never reads raw agent
+logs, starts `token_tracker.py`, creates a cache, writes a file, reaches the
+network, publishes a daily, or restarts a service. The output is publication
+freshness only. A stale or missing machine is unknown; it is never evidence of
+zero usage.
+
+Set `NOUGENTRACKER_EXPECTED_MACHINES` to a comma-separated fleet list or pass
+`--machine` repeatedly. Collection and `--publish` remain explicit batch work
+and are not triggered by the live status path.
+
 ### Dollars are a view, not a record
 
 Daily files store **tokens only**. Spend is recomputed from those tokens at read
