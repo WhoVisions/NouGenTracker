@@ -2875,6 +2875,9 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET or VALIDATE):
         sys.exit(1 if _defects else 0)
 
     if EXPORT:
+        # Sampled BEFORE the export: export_days() creates dailies/<machine>/,
+        # so reading the known set afterwards can never see this machine as new.
+        _known_before = _fd.known_machines()
         _paths = _fd.export_days(ALL_INVOCATIONS)
         _machine = _fd.resolve_machine()
         print()
@@ -2883,7 +2886,7 @@ if __name__ == "__main__" and (INSTALL_HOOKS or EXPORT or FLEET or VALIDATE):
         print("=" * 70)
         if _paths:
             print(f"  {_paths[0].stem} .. {_paths[-1].stem}")
-        _warn = _fd.unintroduced_machine_warning(_machine)
+        _warn = _fd.unintroduced_machine_warning(_machine, known=_known_before)
         if _warn:
             print(f"  ⚠ {_warn}")
         if not _fd.hooks_installed():
