@@ -15,8 +15,8 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-09-05T17:00:08-04:00",
-  "generated_by": "unknown-agent",
+  "generated_at": "2026-09-05T17:11:32-04:00",
+  "generated_by": "antigravity",
   "invocations": 60,
   "machine": "phoebus",
   "models": {

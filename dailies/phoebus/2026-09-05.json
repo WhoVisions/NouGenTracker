@@ -3,21 +3,21 @@
   "date": "2026-09-05",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 1576926856,
-    "input_tokens": 1305054,
-    "output_tokens": 510661,
+    "cache_read": 1597472076,
+    "input_tokens": 1313201,
+    "output_tokens": 513387,
     "reasoning": 0
   },
   "exact": {
     "cache_creation": 8870968,
-    "cache_read": 595810054,
-    "input_tokens": 585925,
-    "output_tokens": 1260817,
-    "reasoning": 16163
+    "cache_read": 596074502,
+    "input_tokens": 587299,
+    "output_tokens": 1261173,
+    "reasoning": 16279
   },
-  "generated_at": "2026-09-05T17:10:38-04:00",
+  "generated_at": "2026-09-05T17:11:32-04:00",
   "generated_by": "antigravity",
-  "invocations": 5081,
+  "invocations": 5108,
   "machine": "phoebus",
   "models": {
     "<synthetic>": {
@@ -50,17 +50,17 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 1576926856,
-      "input_tokens": 1305054,
-      "output_tokens": 510661,
+      "cache_read": 1597472076,
+      "input_tokens": 1313201,
+      "output_tokens": 513387,
       "reasoning": 0
     },
     "gpt-5.6-sol": {
       "cache_creation": 0,
-      "cache_read": 21943424,
-      "input_tokens": 530469,
-      "output_tokens": 40237,
-      "reasoning": 16155
+      "cache_read": 22207872,
+      "input_tokens": 531843,
+      "output_tokens": 40593,
+      "reasoning": 16271
     },
     "gpt-6-astra": {
       "cache_creation": 0,
@@ -73,7 +73,7 @@
   "partial": true,
   "provider_stats": {
     "OpenAI Codex": {
-      "cache_hit_ratio": 0.9759,
+      "cache_hit_ratio": 0.9761,
       "distinct_sessions": 2,
       "peak_context_used_percent": 80.72,
       "plan_types": [
@@ -93,8 +93,8 @@
           "window_minutes": 10080
         }
       },
-      "total_tokens": 24240688,
-      "uncached_input_tokens": 581553
+      "total_tokens": 24506982,
+      "uncached_input_tokens": 582927
     }
   },
   "schema": 3,
@@ -167,9 +167,9 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 1576926856,
-      "input_tokens": 1305054,
-      "output_tokens": 510661,
+      "cache_read": 1597472076,
+      "input_tokens": 1313201,
+      "output_tokens": 513387,
       "reasoning": 0
     },
     "Claude Code": {
@@ -181,17 +181,17 @@
     },
     "OpenAI Codex": {
       "cache_creation": 0,
-      "cache_read": 23542272,
-      "input_tokens": 581553,
-      "output_tokens": 42411,
-      "reasoning": 16163
+      "cache_read": 23806720,
+      "input_tokens": 582927,
+      "output_tokens": 42767,
+      "reasoning": 16279
     }
   },
   "totals": {
     "cache_creation": 8870968,
-    "cache_read": 2172736910,
-    "input_tokens": 1890979,
-    "output_tokens": 1771478,
-    "reasoning": 16163
+    "cache_read": 2193546578,
+    "input_tokens": 1900500,
+    "output_tokens": 1774560,
+    "reasoning": 16279
   }
 }
