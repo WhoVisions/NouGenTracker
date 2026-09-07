@@ -1,0 +1,151 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-06",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 524862962,
+    "input_tokens": 192726,
+    "output_tokens": 107818,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 6155082,
+    "cache_read": 161629225,
+    "input_tokens": 836,
+    "output_tokens": 390919,
+    "reasoning": 0
+  },
+  "generated_at": "2026-09-07T00:45:57-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 1112,
+  "machine": "whoart",
+  "models": {
+    "<synthetic>": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "claude-fable-5": {
+      "cache_creation": 2765432,
+      "cache_read": 87175140,
+      "input_tokens": 402,
+      "output_tokens": 204702,
+      "reasoning": 0
+    },
+    "claude-opus-4-8": {
+      "cache_creation": 540846,
+      "cache_read": 8437594,
+      "input_tokens": 34,
+      "output_tokens": 15326,
+      "reasoning": 0
+    },
+    "claude-opus-5": {
+      "cache_creation": 2848804,
+      "cache_read": 66016491,
+      "input_tokens": 400,
+      "output_tokens": 170891,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 524862962,
+      "input_tokens": 192726,
+      "output_tokens": 107818,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "00148d4102438075",
+    "003a976408536281",
+    "00a498779814bc14",
+    "00aafeba821526d7",
+    "00d64786c3b2305d",
+    "01f0cd995bc85f6b",
+    "01f8002d7eccb100",
+    "02263e5a567bcdd4",
+    "02f520b349ccb3cd",
+    "02fe108f24ee1d07",
+    "033af6f535032301",
+    "0345d276ece4132b",
+    "0372a0dcefadb099",
+    "03a7248efe85bf7b",
+    "03a927a4de18d4e2",
+    "03b43feebe5579d9",
+    "03c98e0f664f4b42",
+    "03dac6948c56d1dc",
+    "03e410931e06af89",
+    "03e5ab520065db9c",
+    "03f70d269480f691",
+    "0405af5a6f4eeef7",
+    "05004a909562f65d",
+    "0546ca3bf7ea1190",
+    "055d0f8bb305883c",
+    "0595c350d587ab99",
+    "060b216ceda96d39",
+    "063b0b29d152a8a1",
+    "064636a37f09ab8a",
+    "06926adcf1eb86ff",
+    "075d22156b79c6e9",
+    "078394cd08f87301",
+    "0795db556e145d87",
+    "07ca619b6aa73ec3",
+    "07f00d5cc5ba2c6c",
+    "0812687f2dea0e43",
+    "0865a27217aa46d1",
+    "088fd2d56c13ebf5",
+    "089219febc747e6a",
+    "092afa26255385cb",
+    "098e9cc1d5b41bf7",
+    "09f9769e9a8ae6c8",
+    "0a6def8b13d10f80",
+    "0a7a49d003a0d91c",
+    "0a7b33b6b1d97189",
+    "0a8e8a4a5c15a52f",
+    "0ae82159abff9745",
+    "0b2b182dbb5b39af",
+    "0b3f6dc3c2338faa",
+    "0b4795aa991469e7",
+    "0b7fab2559aaec24",
+    "0b8965068999eb9c",
+    "0c1798e9cb01a30d",
+    "0c950fd3749294d7",
+    "0c9b652f5949ef64",
+    "0c9c8c42ce141edb",
+    "0cd8bb55488f9955",
+    "0cfea67b4cd570ca",
+    "0d21e3103dc6540c",
+    "0d5c568a232c4f3a",
+    "0dcdad81fcfc9714",
+    "0e08b4581d46a504",
+    "0e7ace8cc92c3920",
+    "0ebead12bed69817"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 524862962,
+      "input_tokens": 192726,
+      "output_tokens": 107818,
+      "reasoning": 0
+    },
+    "Claude Code": {
+      "cache_creation": 6155082,
+      "cache_read": 161629225,
+      "input_tokens": 836,
+      "output_tokens": 390919,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 6155082,
+    "cache_read": 686492187,
+    "input_tokens": 193562,
+    "output_tokens": 498737,
+    "reasoning": 0
+  }
+}

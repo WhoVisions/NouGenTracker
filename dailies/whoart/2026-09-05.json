@@ -3,21 +3,21 @@
   "date": "2026-09-05",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 1120304200,
-    "input_tokens": 1372517,
-    "output_tokens": 630628,
+    "cache_read": 1277939180,
+    "input_tokens": 1471679,
+    "output_tokens": 675229,
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 3583895,
-    "cache_read": 213453571,
-    "input_tokens": 306559,
-    "output_tokens": 515790,
+    "cache_creation": 3987686,
+    "cache_read": 229514934,
+    "input_tokens": 306761,
+    "output_tokens": 598894,
     "reasoning": 2012
   },
-  "generated_at": "2026-09-05T22:46:29-04:00",
+  "generated_at": "2026-09-07T00:45:57-04:00",
   "generated_by": "claude-cli",
-  "invocations": 4762,
+  "invocations": 5157,
   "machine": "whoart",
   "models": {
     "<synthetic>": {
@@ -25,6 +25,13 @@
       "cache_read": 0,
       "input_tokens": 0,
       "output_tokens": 0,
+      "reasoning": 0
+    },
+    "claude-fable-5": {
+      "cache_creation": 213818,
+      "cache_read": 4389631,
+      "input_tokens": 48,
+      "output_tokens": 32363,
       "reasoning": 0
     },
     "claude-fable-5-1": {
@@ -35,10 +42,10 @@
       "reasoning": 0
     },
     "claude-opus-5": {
-      "cache_creation": 2426306,
-      "cache_read": 193259478,
-      "input_tokens": 998,
-      "output_tokens": 422563,
+      "cache_creation": 2616279,
+      "cache_read": 204931210,
+      "input_tokens": 1152,
+      "output_tokens": 473304,
       "reasoning": 0
     },
     "claude-sonnet-5": {
@@ -50,9 +57,9 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 1120304200,
-      "input_tokens": 1372517,
-      "output_tokens": 630628,
+      "cache_read": 1277939180,
+      "input_tokens": 1471679,
+      "output_tokens": 675229,
       "reasoning": 0
     },
     "gpt-6-astra": {
@@ -63,7 +70,7 @@
       "reasoning": 2012
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.9536,
@@ -92,6 +99,7 @@
   },
   "schema": 3,
   "sketch": [
+    "001117ba68e66545",
     "0015c0225bddb6a0",
     "00229d2e44da7452",
     "0022a3dd259b3cfe",
@@ -109,6 +117,7 @@
     "00a6d5747d8e1dc7",
     "00c3ff00ecc1180b",
     "00cdf1318fc50fdd",
+    "00ef64d44217ed89",
     "010a5b3952d82b44",
     "011708c5cc0c03d0",
     "0121fdd0dd989f41",
@@ -118,6 +127,7 @@
     "015a7feea8deaf91",
     "01889e8534f9a513",
     "019d53bce2968617",
+    "01c1630f4adbf24a",
     "01c30ccb7c2f46ef",
     "01c5d974f718f1a4",
     "01cdde5b9e42e92f",
@@ -138,10 +148,12 @@
     "02677cfa1d3ce32c",
     "02695cc470aa412b",
     "0272c3a498d6fce5",
+    "028c914f0e70e3f2",
     "02b0434a87a16534",
     "02c823a23f2597a8",
     "02cb026fb6a6d13e",
     "02e2e3416c17da57",
+    "02e3279522f5317d",
     "030dc74ffbdbb82b",
     "030f68d34955338e",
     "0327adc0081ee574",
@@ -150,26 +162,21 @@
     "0345bcd9e53ea5f5",
     "035e64854e49290b",
     "036b443369254417",
-    "03785522c711009b",
-    "0378ccf2a31ee126",
-    "03796becbb946ef9",
-    "038634e51804852c",
-    "039516cc50764bec",
-    "0399f52c6fde5834"
+    "03785522c711009b"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 1120304200,
-      "input_tokens": 1372517,
-      "output_tokens": 630628,
+      "cache_read": 1277939180,
+      "input_tokens": 1471679,
+      "output_tokens": 675229,
       "reasoning": 0
     },
     "Claude Code": {
-      "cache_creation": 3583895,
-      "cache_read": 207183363,
-      "input_tokens": 1724,
-      "output_tokens": 488762,
+      "cache_creation": 3987686,
+      "cache_read": 223244726,
+      "input_tokens": 1926,
+      "output_tokens": 571866,
       "reasoning": 0
     },
     "OpenAI Codex": {
@@ -181,10 +188,10 @@
     }
   },
   "totals": {
-    "cache_creation": 3583895,
-    "cache_read": 1333757771,
-    "input_tokens": 1679076,
-    "output_tokens": 1146418,
+    "cache_creation": 3987686,
+    "cache_read": 1507454114,
+    "input_tokens": 1778440,
+    "output_tokens": 1274123,
     "reasoning": 2012
   }
 }
