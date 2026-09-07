@@ -3,8 +3,8 @@
   "date": "2026-09-05",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 1277939180,
-    "input_tokens": 1471679,
+    "cache_read": 1446493968,
+    "input_tokens": 1465676,
     "output_tokens": 675229,
     "reasoning": 0
   },
@@ -15,7 +15,7 @@
     "output_tokens": 598894,
     "reasoning": 2012
   },
-  "generated_at": "2026-09-07T00:45:57-04:00",
+  "generated_at": "2026-09-07T11:45:19-04:00",
   "generated_by": "claude-cli",
   "invocations": 5157,
   "machine": "whoart",
@@ -57,8 +57,8 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 1277939180,
-      "input_tokens": 1471679,
+      "cache_read": 1446493968,
+      "input_tokens": 1465676,
       "output_tokens": 675229,
       "reasoning": 0
     },
@@ -115,20 +115,17 @@
     "008394396e2f57f7",
     "00a0cd20dcdfb87b",
     "00a6d5747d8e1dc7",
+    "00b93494d724b85e",
     "00c3ff00ecc1180b",
-    "00cdf1318fc50fdd",
     "00ef64d44217ed89",
     "010a5b3952d82b44",
     "011708c5cc0c03d0",
-    "0121fdd0dd989f41",
     "012d979834a3b521",
     "012fb3b8e3d7f7ab",
     "0144ae630818b091",
     "015a7feea8deaf91",
-    "01889e8534f9a513",
     "019d53bce2968617",
     "01c1630f4adbf24a",
-    "01c30ccb7c2f46ef",
     "01c5d974f718f1a4",
     "01cdde5b9e42e92f",
     "01e3e0b84e75ae4d",
@@ -154,6 +151,7 @@
     "02cb026fb6a6d13e",
     "02e2e3416c17da57",
     "02e3279522f5317d",
+    "02e82176006158d9",
     "030dc74ffbdbb82b",
     "030f68d34955338e",
     "0327adc0081ee574",
@@ -162,13 +160,15 @@
     "0345bcd9e53ea5f5",
     "035e64854e49290b",
     "036b443369254417",
-    "03785522c711009b"
+    "03785522c711009b",
+    "0378ccf2a31ee126",
+    "03796becbb946ef9"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 1277939180,
-      "input_tokens": 1471679,
+      "cache_read": 1446493968,
+      "input_tokens": 1465676,
       "output_tokens": 675229,
       "reasoning": 0
     },
@@ -189,8 +189,8 @@
   },
   "totals": {
     "cache_creation": 3987686,
-    "cache_read": 1507454114,
-    "input_tokens": 1778440,
+    "cache_read": 1676008902,
+    "input_tokens": 1772437,
     "output_tokens": 1274123,
     "reasoning": 2012
   }
