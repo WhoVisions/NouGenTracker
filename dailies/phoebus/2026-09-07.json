@@ -3,49 +3,49 @@
   "date": "2026-09-07",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 331416667,
-    "input_tokens": 121176,
-    "output_tokens": 36754,
+    "cache_read": 347261400,
+    "input_tokens": 125783,
+    "output_tokens": 38487,
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 686057,
-    "cache_read": 66297504,
-    "input_tokens": 420989,
-    "output_tokens": 113481,
+    "cache_creation": 737494,
+    "cache_read": 76887999,
+    "input_tokens": 423197,
+    "output_tokens": 146049,
     "reasoning": 891
   },
-  "generated_at": "2026-09-07T11:24:57-04:00",
+  "generated_at": "2026-09-07T12:03:38-04:00",
   "generated_by": "unknown-agent",
-  "invocations": 633,
+  "invocations": 688,
   "machine": "phoebus",
   "models": {
     "claude-opus-5": {
-      "cache_creation": 686057,
-      "cache_read": 35687584,
-      "input_tokens": 216,
-      "output_tokens": 99242,
+      "cache_creation": 737494,
+      "cache_read": 44997055,
+      "input_tokens": 282,
+      "output_tokens": 131306,
       "reasoning": 0
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 331416667,
-      "input_tokens": 121176,
-      "output_tokens": 36754,
+      "cache_read": 347261400,
+      "input_tokens": 125783,
+      "output_tokens": 38487,
       "reasoning": 0
     },
     "gpt-6-astra": {
       "cache_creation": 0,
-      "cache_read": 30609920,
-      "input_tokens": 420773,
-      "output_tokens": 14239,
+      "cache_read": 31890944,
+      "input_tokens": 422915,
+      "output_tokens": 14743,
       "reasoning": 891
     }
   },
   "partial": true,
   "provider_stats": {
     "OpenAI Codex": {
-      "cache_hit_ratio": 0.9864,
+      "cache_hit_ratio": 0.9869,
       "distinct_sessions": 1,
       "peak_context_used_percent": 82.76,
       "plan_types": [
@@ -65,13 +65,14 @@
           "window_minutes": 10080
         }
       },
-      "total_tokens": 31045823,
-      "uncached_input_tokens": 420773
+      "total_tokens": 32329493,
+      "uncached_input_tokens": 422915
     }
   },
   "schema": 3,
   "sketch": [
     "007392f0bb1f632b",
+    "0115c8a543b5c174",
     "01b7a5eb5f1f9dd4",
     "01c8406a81d6d1ee",
     "020528ef09957f6f",
@@ -93,6 +94,7 @@
     "08b6b54c3a7d23d2",
     "08e7906f1430623f",
     "08fb4de1de242dd5",
+    "093c6a77d1c4d267",
     "09750325895dc986",
     "0a0724751bbc908a",
     "0a89c68a925bdf6d",
@@ -103,7 +105,9 @@
     "0c995168b9c6510d",
     "0cd786b646afb699",
     "0d05cbca67407654",
+    "0dc50d27a78e265e",
     "0dd1401e6ae694c6",
+    "0e5905f6220c9043",
     "0e95298abeb4aefe",
     "0f60015c240bbe3b",
     "105a8c9b37160a91",
@@ -130,40 +134,36 @@
     "19907705d309db11",
     "19d5c365ce36f753",
     "1a3c0ebea88c2335",
-    "1abf4d2cd8ce02a1",
-    "1ac9de8b70d80533",
-    "1b2e4b0b6d8b3f2b",
-    "1bae81e9ea6d1702",
-    "1bfdc01feee7512d"
+    "1abf4d2cd8ce02a1"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 331416667,
-      "input_tokens": 121176,
-      "output_tokens": 36754,
+      "cache_read": 347261400,
+      "input_tokens": 125783,
+      "output_tokens": 38487,
       "reasoning": 0
     },
     "Claude Code": {
-      "cache_creation": 686057,
-      "cache_read": 35687584,
-      "input_tokens": 216,
-      "output_tokens": 99242,
+      "cache_creation": 737494,
+      "cache_read": 44997055,
+      "input_tokens": 282,
+      "output_tokens": 131306,
       "reasoning": 0
     },
     "OpenAI Codex": {
       "cache_creation": 0,
-      "cache_read": 30609920,
-      "input_tokens": 420773,
-      "output_tokens": 14239,
+      "cache_read": 31890944,
+      "input_tokens": 422915,
+      "output_tokens": 14743,
       "reasoning": 891
     }
   },
   "totals": {
-    "cache_creation": 686057,
-    "cache_read": 397714171,
-    "input_tokens": 542165,
-    "output_tokens": 150235,
+    "cache_creation": 737494,
+    "cache_read": 424149399,
+    "input_tokens": 548980,
+    "output_tokens": 184536,
     "reasoning": 891
   }
 }
