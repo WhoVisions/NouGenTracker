@@ -1,0 +1,53 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-08",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 873631,
+    "input_tokens": 36,
+    "output_tokens": 63,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-09-08T11:31:55-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 1,
+  "machine": "whoart",
+  "models": {
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 873631,
+      "input_tokens": 36,
+      "output_tokens": 63,
+      "reasoning": 0
+    }
+  },
+  "partial": true,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "2a6bd6cc74f29ad7"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 873631,
+      "input_tokens": 36,
+      "output_tokens": 63,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 873631,
+    "input_tokens": 36,
+    "output_tokens": 63,
+    "reasoning": 0
+  }
+}
