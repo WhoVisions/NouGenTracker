@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import html
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
@@ -306,7 +307,15 @@ def _table(summary: Any) -> str:
 def render(summary: Any, threshold: float = 0.0,
            title: str = "Fleet usage") -> str:
     """The whole page, as one string."""
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    # GM directive 2026-09-08: every time shown to Dave renders in HIS zone
+    # (America/New_York, DST-aware) from a live clock; UTC stays storage-only.
+    import os
+    _tz_name = os.environ.get("NOUGEN_DISPLAY_TZ", "America/New_York").strip()
+    try:
+        _display_tz = ZoneInfo(_tz_name)
+    except Exception:
+        _display_tz = ZoneInfo("America/New_York")
+    generated = datetime.now(_display_tz).strftime("%Y-%m-%d %I:%M %p %Z")
     span = (f"{summary.days[0]} to {summary.days[-1]}" if summary.days
             else "no data yet")
     machines = len(summary.machines)
