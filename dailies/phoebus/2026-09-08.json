@@ -1,0 +1,57 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-08",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 4501145,
+    "input_tokens": 939,
+    "output_tokens": 711,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-09-08T00:13:15-04:00",
+  "generated_by": "unknown-agent",
+  "invocations": 5,
+  "machine": "phoebus",
+  "models": {
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 4501145,
+      "input_tokens": 939,
+      "output_tokens": 711,
+      "reasoning": 0
+    }
+  },
+  "partial": true,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "08e58e72f25f5ec8",
+    "23c1043141fd8a44",
+    "709cb3ad915a545f",
+    "78eb578c027d33e9",
+    "97f8df2c9bce794c"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 4501145,
+      "input_tokens": 939,
+      "output_tokens": 711,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 4501145,
+    "input_tokens": 939,
+    "output_tokens": 711,
+    "reasoning": 0
+  }
+}
