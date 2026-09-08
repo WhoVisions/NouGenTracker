@@ -170,7 +170,8 @@ def known_machines(dailies_dir: Optional[Path] = None) -> List[str]:
 
 
 def unintroduced_machine_warning(
-    machine: Optional[str] = None, dailies_dir: Optional[Path] = None
+    machine: Optional[str] = None, dailies_dir: Optional[Path] = None,
+    known: Optional[List[str]] = None,
 ) -> Optional[str]:
     """Flag a machine name the fleet has never seen. None if fine.
 
@@ -185,7 +186,15 @@ def unintroduced_machine_warning(
     name, and there is no human at the keyboard to ask.
     """
     machine = machine or resolve_machine()
-    known = known_machines(dailies_dir)
+    # `known` MUST be sampled before the export writes anything. export_days()
+    # creates dailies/<machine>/ for the name it is exporting under, so a
+    # caller that reads the directory afterwards always finds the new machine
+    # already "known" and this function can never fire. Measured on phoebus
+    # 2026-09-04: an export under the hostname silently forked a fourth
+    # machine series and the warning did not appear, because by the time it
+    # was consulted the fork it was meant to announce had already happened.
+    if known is None:
+        known = known_machines(dailies_dir)
     if not known or machine in known:
         return None
     return (
