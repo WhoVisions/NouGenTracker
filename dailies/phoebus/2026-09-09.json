@@ -1,0 +1,176 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-09",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 68768924,
+    "input_tokens": 276359,
+    "output_tokens": 125571,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 26380800,
+    "input_tokens": 529505,
+    "output_tokens": 28260,
+    "reasoning": 5559
+  },
+  "generated_at": "2026-09-10T16:24:13-04:00",
+  "generated_by": "unknown-agent",
+  "invocations": 855,
+  "machine": "phoebus",
+  "models": {
+    "claude-opus-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 4283270,
+      "input_tokens": 8181,
+      "output_tokens": 2747,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 64297245,
+      "input_tokens": 267631,
+      "output_tokens": 122823,
+      "reasoning": 0
+    },
+    "gemini-3.1-pro-low (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 188409,
+      "input_tokens": 547,
+      "output_tokens": 1,
+      "reasoning": 0
+    },
+    "gpt-5.5": {
+      "cache_creation": 0,
+      "cache_read": 21473280,
+      "input_tokens": 321821,
+      "output_tokens": 25430,
+      "reasoning": 4348
+    },
+    "gpt-5.6-luna": {
+      "cache_creation": 0,
+      "cache_read": 4907520,
+      "input_tokens": 207684,
+      "output_tokens": 2830,
+      "reasoning": 1211
+    }
+  },
+  "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9803,
+      "distinct_sessions": 2,
+      "peak_context_used_percent": 82.16,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 3.0,
+          "peak_used_percent": 32.0,
+          "resets_at": 1789025714,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 77.0,
+          "peak_used_percent": 77.0,
+          "resets_at": 1789445728,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 26944124,
+      "uncached_input_tokens": 529505
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "0031d07cb8dd2baf",
+    "006e1e4aa1db5714",
+    "006ecee4db4ee82e",
+    "0092477ac7aa72a0",
+    "00cdf0228058e57b",
+    "012fa725918b5b9a",
+    "0130775a62a331d7",
+    "014eeca93483eec1",
+    "01b88f3104751815",
+    "02b6e319a5ff54b6",
+    "02eae5d13dfa7f43",
+    "0315859b389d7821",
+    "03225b4e257c3d5e",
+    "034459e50117106f",
+    "034525e55118184c",
+    "0378cae238ea46cb",
+    "03832d267a105ea2",
+    "03e6cff55219f02a",
+    "03efe1d8dcab4e02",
+    "03fd8ed816f042aa",
+    "0403cd9c6d8964d8",
+    "045c95094fb2f30f",
+    "04c1239f05af2839",
+    "04df42fc45fc5916",
+    "04eac82be62f43a8",
+    "05590b92387f3561",
+    "05aeb2d66964c133",
+    "078855cea0508640",
+    "0816af7f849389c5",
+    "0886453c6a39ed6b",
+    "089b8dd1f90ad746",
+    "08cd150c39f08324",
+    "096bb4ec28cd1d7f",
+    "09d9a52c2d97c805",
+    "0a08a5dd02463916",
+    "0af5bd73957cab32",
+    "0b0dbffe84d5579a",
+    "0b4e0d635441ddfd",
+    "0b6242605bce25f3",
+    "0c610e53adf558f3",
+    "0cc6973e4828a95d",
+    "0ce6a61286469fff",
+    "0d2dbb13c8be53f8",
+    "0d9699f603bcb28a",
+    "0dab761339c536ec",
+    "0db4ab6c166aab8c",
+    "0de93a8d58f2af88",
+    "0df7dac0ad44d270",
+    "0e36ee2bf2e40171",
+    "0e6a395981b73512",
+    "0ebcb17c5814e4f1",
+    "0ecd8f59c40965b0",
+    "0ef7b58a6f03ac13",
+    "0f3685cb8892af73",
+    "0fda1c8b0c410d19",
+    "0fef81ed092c2d35",
+    "103685d93e310fbb",
+    "1085cc11dd4b8483",
+    "108f45e6235fcc12",
+    "111964a76f24c7d5",
+    "112d250691f27204",
+    "113c9d46542eaf35",
+    "11479d02cb5644da",
+    "1206e648ea53e935"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 68768924,
+      "input_tokens": 276359,
+      "output_tokens": 125571,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 26380800,
+      "input_tokens": 529505,
+      "output_tokens": 28260,
+      "reasoning": 5559
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 95149724,
+    "input_tokens": 805864,
+    "output_tokens": 153831,
+    "reasoning": 5559
+  }
+}
