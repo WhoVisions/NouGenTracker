@@ -1,0 +1,169 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-09",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 291969072,
+    "input_tokens": 3004675,
+    "output_tokens": 218093,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 87046528,
+    "input_tokens": 1487978,
+    "output_tokens": 81883,
+    "reasoning": 32692
+  },
+  "generated_at": "2026-09-10T03:00:39-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 2704,
+  "machine": "whoart",
+  "models": {
+    "claude-opus-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 49408,
+      "input_tokens": 6266,
+      "output_tokens": 9,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 291919664,
+      "input_tokens": 2998409,
+      "output_tokens": 218084,
+      "reasoning": 0
+    },
+    "gpt-5.6-luna": {
+      "cache_creation": 0,
+      "cache_read": 28958080,
+      "input_tokens": 609644,
+      "output_tokens": 31300,
+      "reasoning": 10677
+    },
+    "gpt-5.6-terra": {
+      "cache_creation": 0,
+      "cache_read": 58088448,
+      "input_tokens": 878334,
+      "output_tokens": 50583,
+      "reasoning": 22015
+    }
+  },
+  "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9832,
+      "distinct_sessions": 3,
+      "peak_context_used_percent": 85.56,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 3.0,
+          "peak_used_percent": 97.0,
+          "resets_at": 1789025714,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 77.0,
+          "peak_used_percent": 77.0,
+          "resets_at": 1789445728,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 88798297,
+      "uncached_input_tokens": 1487978
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "000b37b2e596c04d",
+    "00175777910a6dbe",
+    "00214b0da567188d",
+    "00255241af5bc570",
+    "006afb4deeffd546",
+    "0096135e1d28a8da",
+    "00bf553af54f95bc",
+    "00c11d27587c020c",
+    "00d97e7db0a10614",
+    "00d9f1cafac3bb38",
+    "00e1bb66156f9476",
+    "00e40d5395c26b94",
+    "00ecc7b0ef57eb50",
+    "0147e8f06302f02b",
+    "01501e8a5da4833d",
+    "01502449566ff302",
+    "0160b59062827315",
+    "016b1f2990a7eeff",
+    "0180f18bd712c7be",
+    "02263c382bacbcee",
+    "022a901f173df112",
+    "023780b10cbf64c7",
+    "023daa6143064932",
+    "0241ab59dfd47505",
+    "0242404ca93cffb1",
+    "027d87e462ed948e",
+    "02819afbee362170",
+    "02a47b3e3b2b7fb7",
+    "02acdbc6c89d30cf",
+    "02b09fbd60442109",
+    "02e5249a14a99e77",
+    "030be96fd5339496",
+    "0337af19403edfef",
+    "0354ef676c0c76e3",
+    "035cc569b4f17d62",
+    "035e01aa133cb3bb",
+    "03689b7bc543a64e",
+    "036fe1b87c5a83ca",
+    "037561c7b3850af4",
+    "03a4f723dc7bff50",
+    "03aef0d0be1e0355",
+    "03c322cdc740115d",
+    "03d53f49e8f07db8",
+    "03d702b48838f234",
+    "03e5d9911cc4ad4e",
+    "03ea123549732982",
+    "03eb08680fe2d433",
+    "03f2eaed76d869d7",
+    "043cd53c901b93c5",
+    "045a93a2b47b87ab",
+    "047afe49a812e3b5",
+    "0480feb0ed7ce688",
+    "04ac6ce390b9aad2",
+    "04be29a8d4496109",
+    "04ff78358e1a1b33",
+    "0500be0a32f81042",
+    "051f0a0f40965cab",
+    "055324d3c8fe9076",
+    "0557eefd055b6164",
+    "056ffebccc68ae50",
+    "05700c10552769d8",
+    "0585b57f4a1e4be3",
+    "05d0340c402f3a03",
+    "05d65a5bd75da0f8"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 291969072,
+      "input_tokens": 3004675,
+      "output_tokens": 218093,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 87046528,
+      "input_tokens": 1487978,
+      "output_tokens": 81883,
+      "reasoning": 32692
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 379015600,
+    "input_tokens": 4492653,
+    "output_tokens": 299976,
+    "reasoning": 32692
+  }
+}
