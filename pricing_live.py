@@ -1,3 +1,4 @@
+from __future__ import annotations
 """pricing_live.py - Dynamic vendor pricing resolver for NouGenTracker.
 
 Authority: GM directive (Rule 0.2 / Rule 0.0, dynamic over hardcode).
