@@ -3,9 +3,9 @@
   "date": "2026-06-07",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 107402395,
-    "input_tokens": 277048,
-    "output_tokens": 140559,
+    "cache_read": 107345210,
+    "input_tokens": 267556,
+    "output_tokens": 140154,
     "reasoning": 0
   },
   "exact": {
@@ -15,9 +15,9 @@
     "output_tokens": 53190,
     "reasoning": 17399
   },
-  "generated_at": "2026-09-07T11:45:19-04:00",
-  "generated_by": "claude-cli",
-  "invocations": 773,
+  "generated_at": "2026-09-12T00:34:44-04:00",
+  "generated_by": "antigravity",
+  "invocations": 765,
   "machine": "whoart",
   "models": {
     "claude-opus-4-6-thinking (estimated)": {
@@ -46,13 +46,6 @@
       "cache_read": 91662349,
       "input_tokens": 229131,
       "output_tokens": 120577,
-      "reasoning": 0
-    },
-    "gemini-3.5-flash-medium (estimated)": {
-      "cache_creation": 0,
-      "cache_read": 57185,
-      "input_tokens": 9492,
-      "output_tokens": 405,
       "reasoning": 0
     },
     "gpt-5.5": {
@@ -160,9 +153,9 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 106118776,
-      "input_tokens": 266397,
-      "output_tokens": 137407,
+      "cache_read": 106061591,
+      "input_tokens": 256905,
+      "output_tokens": 137002,
       "reasoning": 0
     },
     "Gemini CLI": {
@@ -182,9 +175,9 @@
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 113695395,
-    "input_tokens": 6513987,
-    "output_tokens": 193749,
+    "cache_read": 113638210,
+    "input_tokens": 6504495,
+    "output_tokens": 193344,
     "reasoning": 17399
   }
 }

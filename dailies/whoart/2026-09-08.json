@@ -3,51 +3,188 @@
   "date": "2026-09-08",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 873631,
-    "input_tokens": 36,
-    "output_tokens": 63,
+    "cache_read": 5909749694,
+    "input_tokens": 1329938,
+    "output_tokens": 535140,
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 0,
-    "cache_read": 0,
-    "input_tokens": 0,
-    "output_tokens": 0,
-    "reasoning": 0
+    "cache_creation": 8322739,
+    "cache_read": 555777611,
+    "input_tokens": 651457,
+    "output_tokens": 790571,
+    "reasoning": 8491
   },
-  "generated_at": "2026-09-08T11:31:55-04:00",
-  "generated_by": "claude-cli",
-  "invocations": 1,
+  "generated_at": "2026-09-12T00:34:44-04:00",
+  "generated_by": "antigravity",
+  "invocations": 4084,
   "machine": "whoart",
   "models": {
+    "<synthetic>": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "claude-fable-5-1": {
+      "cache_creation": 239735,
+      "cache_read": 2353971,
+      "input_tokens": 200,
+      "output_tokens": 16303,
+      "reasoning": 0
+    },
+    "claude-opus-5": {
+      "cache_creation": 4019203,
+      "cache_read": 192061455,
+      "input_tokens": 606,
+      "output_tokens": 289617,
+      "reasoning": 0
+    },
+    "claude-sonnet-5": {
+      "cache_creation": 4063801,
+      "cache_read": 344801545,
+      "input_tokens": 1476,
+      "output_tokens": 462403,
+      "reasoning": 0
+    },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 873631,
-      "input_tokens": 36,
-      "output_tokens": 63,
+      "cache_read": 5909749694,
+      "input_tokens": 1329938,
+      "output_tokens": 535140,
       "reasoning": 0
+    },
+    "gpt-5.6-luna": {
+      "cache_creation": 0,
+      "cache_read": 16560640,
+      "input_tokens": 649175,
+      "output_tokens": 22248,
+      "reasoning": 8491
     }
   },
-  "partial": true,
-  "provider_stats": {},
+  "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9623,
+      "distinct_sessions": 2,
+      "peak_context_used_percent": 64.4,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 9.0,
+          "peak_used_percent": 37.0,
+          "resets_at": 1788932700,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 49.0,
+          "peak_used_percent": 49.0,
+          "resets_at": 1789445728,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 17240554,
+      "uncached_input_tokens": 649175
+    }
+  },
   "schema": 3,
   "sketch": [
-    "2a6bd6cc74f29ad7"
+    "0003b670cc0d67c7",
+    "00085fe8151ee9d9",
+    "00168a34117be23d",
+    "0026aa5339de0abd",
+    "00391d8ddcfaf6b3",
+    "003a917f571d2714",
+    "005d47a40236554c",
+    "005f7cba442eedd5",
+    "0066fb4f644b80db",
+    "00807ba39b5a641d",
+    "00822aaecff2c0b7",
+    "00901dd5711c3898",
+    "0092c273fc944018",
+    "00a0a4a137e9f73b",
+    "00a9cb0f3e1e2d88",
+    "00cc0f0366915df4",
+    "00ce79d7afc9c422",
+    "00e7c78e5b27a28c",
+    "00eb03396bc1c292",
+    "00ff50cbed132f22",
+    "0134485282151167",
+    "013596c23a5bcc20",
+    "0149161247c77211",
+    "014d0f367eddad21",
+    "015d79255cfb5149",
+    "01637b6d7048a84c",
+    "0164d7c146f12dac",
+    "01674682e27e56ed",
+    "016e68229ff36a24",
+    "017e3e1dbe1bf8b2",
+    "0181520affafc3b6",
+    "01824d8d169503a3",
+    "019b3ce5a973473d",
+    "019d09c626005265",
+    "01a9246bbe6bd30a",
+    "01ad8fe57ba75f4d",
+    "01b4b02e4408efd8",
+    "01b6d9289bc9a22d",
+    "01cf7eb8c3f3119b",
+    "01e04ffe4fe4766b",
+    "01ebd36a09c3fc2a",
+    "01f67b425ce4ae20",
+    "01f6974a3e221867",
+    "01f6b62bada81c74",
+    "01fc6992838013e4",
+    "02064a30e1356581",
+    "020ebf77d37d7091",
+    "0224f05bc4b74dc9",
+    "0235368d7dfe345e",
+    "0257ebbcc3027214",
+    "025bec1621864b30",
+    "0261460b8c9cf431",
+    "0262cbd7a1cf8466",
+    "0283be983ed5dbce",
+    "0285e9ee8eaafbad",
+    "028eefda000127f2",
+    "02a55601b9989791",
+    "02b5a03137e4b7e1",
+    "02b6e36fbab18966",
+    "02be2a030d4bedf7",
+    "02c3be3eef57db31",
+    "02c9ab42688c36f7",
+    "02e0da9a8dd6e8a6",
+    "02e5611685194e3b"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 873631,
-      "input_tokens": 36,
-      "output_tokens": 63,
+      "cache_read": 5909749694,
+      "input_tokens": 1329938,
+      "output_tokens": 535140,
       "reasoning": 0
+    },
+    "Claude Code": {
+      "cache_creation": 8322739,
+      "cache_read": 539216971,
+      "input_tokens": 2282,
+      "output_tokens": 768323,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 16560640,
+      "input_tokens": 649175,
+      "output_tokens": 22248,
+      "reasoning": 8491
     }
   },
   "totals": {
-    "cache_creation": 0,
-    "cache_read": 873631,
-    "input_tokens": 36,
-    "output_tokens": 63,
-    "reasoning": 0
+    "cache_creation": 8322739,
+    "cache_read": 6465527305,
+    "input_tokens": 1981395,
+    "output_tokens": 1325711,
+    "reasoning": 8491
   }
 }

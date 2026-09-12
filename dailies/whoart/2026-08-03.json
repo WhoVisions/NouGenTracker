@@ -3,9 +3,9 @@
   "date": "2026-08-03",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 1549799,
-    "input_tokens": 23837,
-    "output_tokens": 18431,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
     "reasoning": 0
   },
   "exact": {
@@ -15,9 +15,9 @@
     "output_tokens": 474422,
     "reasoning": 0
   },
-  "generated_at": "2026-09-07T11:45:19-04:00",
-  "generated_by": "claude-cli",
-  "invocations": 750,
+  "generated_at": "2026-09-12T00:34:44-04:00",
+  "generated_by": "antigravity",
+  "invocations": 682,
   "machine": "whoart",
   "models": {
     "<synthetic>": {
@@ -40,20 +40,12 @@
       "input_tokens": 2191,
       "output_tokens": 346593,
       "reasoning": 0
-    },
-    "gemini-3-flash-preview (estimated)": {
-      "cache_creation": 0,
-      "cache_read": 1549799,
-      "input_tokens": 23837,
-      "output_tokens": 18431,
-      "reasoning": 0
     }
   },
   "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
-    "006e60dd0953c304",
     "009edc896c8f279f",
     "01954e8785d2bade",
     "01d0c5410d063d1f",
@@ -89,7 +81,6 @@
     "0c174e0b18bef7dd",
     "0ca1e2fbc489ed06",
     "0ca8616d589276d6",
-    "0cce151b4e6a08cc",
     "0d5b6c60a4712cd5",
     "0e01a2b934ac64b8",
     "0e1a2805326c6703",
@@ -98,7 +89,6 @@
     "0f8725a56a9faa5d",
     "0fa1a2f1dd9ae466",
     "102c9d8b9c88f81b",
-    "1083ea91fd2df002",
     "10c6840baec70a69",
     "10edd15b32b6540d",
     "1151a9186192db88",
@@ -108,7 +98,6 @@
     "126a0b1672a5c0ca",
     "128345abaf906488",
     "1315048e4af39461",
-    "132cc4f1af15ca0b",
     "1366e273853d5fc0",
     "13fb9ddfc0163f84",
     "147500db67a34796",
@@ -116,16 +105,13 @@
     "14c974d777ffac82",
     "161e1ab16a23f427",
     "164a72289d5ba33e",
-    "165778e5562ab0f6"
+    "165778e5562ab0f6",
+    "16589bca8d18c988",
+    "16c90f6247d72d48",
+    "17b991b460d9884c",
+    "17bbb4dde53266b4"
   ],
   "sources": {
-    "Antigravity (Fallback)": {
-      "cache_creation": 0,
-      "cache_read": 1549799,
-      "input_tokens": 23837,
-      "output_tokens": 18431,
-      "reasoning": 0
-    },
     "Claude Code": {
       "cache_creation": 8612091,
       "cache_read": 300634263,
@@ -136,9 +122,9 @@
   },
   "totals": {
     "cache_creation": 8612091,
-    "cache_read": 302184062,
-    "input_tokens": 28723,
-    "output_tokens": 492853,
+    "cache_read": 300634263,
+    "input_tokens": 4886,
+    "output_tokens": 474422,
     "reasoning": 0
   }
 }

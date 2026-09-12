@@ -15,8 +15,8 @@
     "output_tokens": 25238,
     "reasoning": 0
   },
-  "generated_at": "2026-09-07T11:45:19-04:00",
-  "generated_by": "claude-cli",
+  "generated_at": "2026-09-12T00:34:44-04:00",
+  "generated_by": "antigravity",
   "invocations": 49,
   "machine": "whoart",
   "models": {

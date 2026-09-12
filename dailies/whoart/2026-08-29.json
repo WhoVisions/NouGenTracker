@@ -4,8 +4,8 @@
   "estimated": {
     "cache_creation": 0,
     "cache_read": 103361741,
-    "input_tokens": 213140,
-    "output_tokens": 107554,
+    "input_tokens": 198615,
+    "output_tokens": 103442,
     "reasoning": 0
   },
   "exact": {
@@ -15,9 +15,9 @@
     "output_tokens": 1038798,
     "reasoning": 5808
   },
-  "generated_at": "2026-09-07T11:45:19-04:00",
-  "generated_by": "claude-cli",
-  "invocations": 1607,
+  "generated_at": "2026-09-12T00:34:44-04:00",
+  "generated_by": "antigravity",
+  "invocations": 1605,
   "machine": "whoart",
   "models": {
     "claude-opus-5": {
@@ -30,8 +30,8 @@
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
       "cache_read": 103361741,
-      "input_tokens": 213140,
-      "output_tokens": 107554,
+      "input_tokens": 198615,
+      "output_tokens": 103442,
       "reasoning": 0
     },
     "gpt-5.6-sol": {
@@ -123,7 +123,6 @@
     "0738e0fb979782c2",
     "0753be25c3df9749",
     "076190bead9e9146",
-    "0764210f3d52338b",
     "07ab00b92b7dec3e",
     "07b42f2a4dbbc84a",
     "07b97744aae512ae",
@@ -134,14 +133,15 @@
     "085d74e3084f66d4",
     "08700cdc1fd18050",
     "08a73b32c3cd3fcb",
-    "08cbab0765d44048"
+    "08cbab0765d44048",
+    "0913d96a9244d31d"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
       "cache_read": 103361741,
-      "input_tokens": 213140,
-      "output_tokens": 107554,
+      "input_tokens": 198615,
+      "output_tokens": 103442,
       "reasoning": 0
     },
     "Claude Code": {
@@ -162,8 +162,8 @@
   "totals": {
     "cache_creation": 3520028,
     "cache_read": 447678845,
-    "input_tokens": 348798,
-    "output_tokens": 1146352,
+    "input_tokens": 334273,
+    "output_tokens": 1142240,
     "reasoning": 5808
   }
 }
