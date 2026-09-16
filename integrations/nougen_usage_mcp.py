@@ -44,7 +44,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone as dt_timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -460,7 +460,7 @@ def tool_tracker_query(
         if machine:
             raise ValueError("machine cannot be combined with fleet scope")
         machines = expected_machines()
-    instant = as_of or datetime.now(timezone.utc).isoformat()
+    instant = as_of or datetime.now(dt_timezone.utc).isoformat()
     data = query_tracker_dailies(
         root, machines=machines, scope=scope, period=period, as_of=instant, timezone=timezone,
         start=start, end=end, group_by=group_by, prove=prove,
