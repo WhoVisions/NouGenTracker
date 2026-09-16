@@ -253,6 +253,7 @@ def test_tracker_query_returns_partial_floor_and_deferred_not_zero(monkeypatch, 
     assert rows["phoebus"]["state"] == "DEFERRED"
     assert rows["phoebus"]["tokens"] is None
     assert data["state"]["completeness"] == "PARTIAL"
+    assert data["state"]["observation"] == "PARSED"
     assert data["state"]["coverage"]["missing_nodes"] == ["phoebus", "whoart"]
     assert data["state"]["recovery"] == "CONTINUE_FEDERATION"
     assert "coverage.missing_machine_days" in data["state"]["reason_codes"]
@@ -291,6 +292,19 @@ def test_tracker_query_partial_daily_cannot_advance_fleet_total(monkeypatch, tmp
     assert data["partial_by_machine"] == {
         "whoart": {"count": 1, "ranges": ["2026-01-01"]}}
     assert data["state"]["reason_codes"] == ["coverage.partial_daily_artifact"]
+
+
+def test_tracker_state_distinguishes_observed_zero_from_no_hit(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    for machine in ("blade1tb", "phoebus", "whoart"):
+        _write_daily(tmp_path, machine, "2026-01-01", exact=0)
+    data = mod.call_tool("tracker_query", {
+        "period": "LATEST", "scope": "fleet", "as_of": "2026-01-01",
+    })["structuredContent"]
+    assert data["total"] == 0
+    assert data["state"]["completeness"] == "COMPLETE"
+    assert data["state"]["retrieval"] == "HIT"
+    assert data["state"]["observation"] == "PARSED"
 
 
 def test_passive_live_status_never_runs_tracker_or_creates_cache(

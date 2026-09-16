@@ -234,10 +234,11 @@ def tracker_query(
         reason_codes.append("quality.estimated_tokens_present")
     state = {
         "status": "SUCCESS" if complete else "DEGRADED",
+        "observation": "PARSED" if any(row["observed_days"] for row in machine_rows) else "DEFERRED",
         "completeness": "COMPLETE" if complete else "PARTIAL",
         "conflict": "UNKNOWN",
         "freshness": "UNKNOWN",
-        "retrieval": "HIT" if metric_total else "NO_HIT",
+        "retrieval": "HIT" if any(row["observed_days"] for row in machine_rows) else "NO_HIT",
         "pagination": "NOT_APPLICABLE",
         "availability": "AVAILABLE",
         "truth_quality": "ESTIMATED" if estimated_total else "EXACT",
