@@ -252,6 +252,10 @@ def test_tracker_query_returns_partial_floor_and_deferred_not_zero(monkeypatch, 
     assert rows["blade1tb"]["state"] == "PARTIAL"
     assert rows["phoebus"]["state"] == "DEFERRED"
     assert rows["phoebus"]["tokens"] is None
+    assert data["state"]["completeness"] == "PARTIAL"
+    assert data["state"]["coverage"]["missing_nodes"] == ["phoebus", "whoart"]
+    assert data["state"]["recovery"] == "CONTINUE_FEDERATION"
+    assert "coverage.missing_machine_days" in data["state"]["reason_codes"]
 
 
 def test_tracker_query_complete_integer_sum_and_provenance_are_deterministic(monkeypatch, tmp_path):
@@ -269,6 +273,9 @@ def test_tracker_query_complete_integer_sum_and_provenance_are_deterministic(mon
     assert first["observed_total"] == 120
     assert first["quality_activity"] == {"exact": 60, "estimated": 60}
     assert len(first["provenance"]["source_hashes"]) == 6
+    assert first["state"]["completeness"] == "COMPLETE"
+    assert first["state"]["truth_quality"] == "ESTIMATED"
+    assert first["state"]["recovery"] == "STOP_WITH_EXPLICIT_STATE"
 
 
 def test_tracker_query_partial_daily_cannot_advance_fleet_total(monkeypatch, tmp_path):
@@ -283,6 +290,7 @@ def test_tracker_query_partial_daily_cannot_advance_fleet_total(monkeypatch, tmp
     assert data["observed_total"] == 12
     assert data["partial_by_machine"] == {
         "whoart": {"count": 1, "ranges": ["2026-01-01"]}}
+    assert data["state"]["reason_codes"] == ["coverage.partial_daily_artifact"]
 
 
 def test_passive_live_status_never_runs_tracker_or_creates_cache(

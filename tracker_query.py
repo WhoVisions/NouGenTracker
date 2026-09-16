@@ -11,6 +11,30 @@ from zoneinfo import ZoneInfo
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation", "cache_read")
 
 
+def _recovery(state: dict[str, Any]) -> str:
+    """Keep machine-actionable recovery separate from the human status label."""
+    flags = state["flags"]
+    if state["completeness"] == "PARTIAL" and flags["missing_expected_nodes"] and flags["retryable"]:
+        return "CONTINUE_FEDERATION"
+    if state["conflict"] == "CONFLICTED" and flags["traceable"]:
+        return "TRACE_PROVENANCE"
+    if state["freshness"] == "STALE" and state["canonical_key"]:
+        return "REFRESH_CANONICAL"
+    if state["retrieval"] == "NO_HIT" and not state["coverage"]["complete"]:
+        return "EXPAND_RETRIEVAL"
+    if state["retrieval"] == "NO_HIT" and state["coverage"]["complete"] and flags["deeper_search_available"]:
+        return "DRIFT_RECURSE"
+    if state["pagination"] in {"STALLED", "LOOP_DETECTED"}:
+        return "REPARTITION_QUERY"
+    if state["availability"] == "TIMEOUT" and flags["failover_available"]:
+        return "FAILOVER"
+    if state["truth_quality"] == "ESTIMATED" and flags["exact_source_available"]:
+        return "RECONCILE"
+    if state["canonicality"] == "SUPERSEDED":
+        return "FOLLOW_SUPERSESSION"
+    return "STOP_WITH_EXPLICIT_STATE"
+
+
 def _days(start: date, end: date) -> list[date]:
     if end < start:
         raise ValueError("end must be on or after start")
@@ -198,6 +222,54 @@ def tracker_query(
 
     complete = not missing_by_machine and not partial_by_machine and not malformed
     total = metric_total if complete else None
+    deferred_machines = [row["machine"] for row in machine_rows if row["state"] == "DEFERRED"]
+    reason_codes = []
+    if missing_by_machine:
+        reason_codes.append("coverage.missing_machine_days")
+    if partial_by_machine:
+        reason_codes.append("coverage.partial_daily_artifact")
+    if malformed:
+        reason_codes.append("artifact.malformed")
+    if estimated_total:
+        reason_codes.append("quality.estimated_tokens_present")
+    state = {
+        "status": "SUCCESS" if complete else "DEGRADED",
+        "completeness": "COMPLETE" if complete else "PARTIAL",
+        "conflict": "UNKNOWN",
+        "freshness": "UNKNOWN",
+        "retrieval": "HIT" if metric_total else "NO_HIT",
+        "pagination": "NOT_APPLICABLE",
+        "availability": "AVAILABLE",
+        "truth_quality": "ESTIMATED" if estimated_total else "EXACT",
+        "canonicality": "UNKNOWN",
+        "flags": {
+            "missing_expected_nodes": bool(deferred_machines),
+            "retryable": bool(deferred_machines),
+            "traceable": bool(prove),
+            "deeper_search_available": False,
+            "failover_available": False,
+            "exact_source_available": False,
+            "exact": not bool(estimated_total),
+            "current": None,
+        },
+        "reason_codes": reason_codes,
+        "evidence": [
+            {"source_id": source_id, "sha256": digest if prove else None}
+            for source_id, digest in sorted(source_hashes.items())
+        ],
+        "coverage": {
+            "complete": complete,
+            "expected_machine_days": len(expected) * len(requested_days),
+            "observed_machine_days": sum(row["observed_days"] for row in machine_rows),
+            "expected_nodes": expected,
+            "observed_nodes": [row["machine"] for row in machine_rows if row["observed_days"]],
+            "missing_nodes": deferred_machines,
+        },
+        "canonical_key": (
+            f"total_activity/v1:{scope}:{period}:{lo.isoformat()}:{hi.isoformat()}:{timezone}"
+        ),
+    }
+    state["recovery"] = _recovery(state)
     result = {
         "status": "complete" if complete else "partial",
         "scope": scope,
@@ -213,9 +285,8 @@ def tracker_query(
         "missing_by_machine": missing_by_machine,
         "partial_by_machine": partial_by_machine,
         "malformed": malformed,
-        "coverage": {"complete": complete,
-                     "expected_machine_days": len(expected) * len(requested_days),
-                     "observed_machine_days": sum(row["observed_days"] for row in machine_rows)},
+        "coverage": state["coverage"],
+        "state": state,
         "group_by": group_by,
         "groups": [{"key": key, "activity": value}
                    for key, value in sorted(group_totals.items())] if group_by == "model" else [],
