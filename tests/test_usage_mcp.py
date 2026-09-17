@@ -108,7 +108,7 @@ def test_every_tool_declares_schema_output_and_annotations(monkeypatch, tmp_path
     out = _rpc(mod, monkeypatch,
                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     tools = out[0]["result"]["tools"]
-    assert len(tools) == 6
+    assert len(tools) == 7
     for tool in tools:
         assert tool["inputSchema"]["type"] == "object"
         assert tool["outputSchema"]["type"] == "object"
@@ -118,6 +118,7 @@ def test_every_tool_declares_schema_output_and_annotations(monkeypatch, tmp_path
     assert by_name["tracker_live_status"]["annotations"]["openWorldHint"] is False
     assert by_name["token_usage_provenance"]["annotations"]["openWorldHint"] is False
     assert by_name["fleet_token_usage"]["annotations"]["openWorldHint"] is True
+    assert "YTD" in by_name["tracker_query"]["inputSchema"]["properties"]["period"]["enum"]
 
 
 def test_input_schemas_refuse_extra_properties(monkeypatch, tmp_path):
@@ -220,6 +221,135 @@ def test_empty_report_does_not_pretend_to_be_zero_usage(monkeypatch, tmp_path):
     assert "branch" in text
     assert out["structuredContent"]["machines"] == []
     assert "dailies_machines" in out["structuredContent"]
+
+
+def _write_daily(root, machine, day, *, exact=0, estimated=0, partial=False):
+    import json
+
+    path = root / "dailies" / machine / f"{day}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = {"input_tokens": exact, "output_tokens": 0,
+              "cache_creation": 0, "cache_read": 0}
+    est = {"input_tokens": estimated, "output_tokens": 0,
+           "cache_creation": 0, "cache_read": 0}
+    record = {"machine": machine, "date": day, "exact": fields,
+              "estimated": est, "models": {}, "partial": partial}
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+
+def test_tracker_query_returns_partial_floor_and_deferred_not_zero(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    _write_daily(tmp_path, "blade1tb", "2026-01-01", exact=12)
+    data = mod.call_tool("tracker_query", {
+        "period": "RANGE", "scope": "fleet", "start": "2026-01-01",
+        "end": "2026-01-02", "as_of": "2026-01-02",
+    })["structuredContent"]
+    assert data["status"] == "partial"
+    assert data["total"] is None
+    assert data["observed_total"] == 12
+    assert data["floor"] is True
+    rows = {item["machine"]: item for item in data["machines"]}
+    assert rows["blade1tb"]["state"] == "PARTIAL"
+    assert rows["phoebus"]["state"] == "DEFERRED"
+    assert rows["phoebus"]["tokens"] is None
+    assert data["state"]["completeness"] == "PARTIAL"
+    assert data["state"]["observation"] == "PARSED"
+    assert data["state"]["coverage"]["missing_nodes"] == ["phoebus", "whoart"]
+    assert data["state"]["recovery"] == "CONTINUE_FEDERATION"
+    assert "coverage.missing_machine_days" in data["state"]["reason_codes"]
+    assert "EXPECTED_NODE_NOT_QUERIED" in data["state"]["reason_codes"]
+    assert data["state"]["federation"] == "NODE_DEFERRED"
+    assert data["state"]["execution"] == "COMPLETE"
+    assert data["state"]["flags"]["missing_expected_nodes"] is True
+    assert data["state"]["flags"]["missing_expected_dates"] is True
+
+
+def test_tracker_query_complete_integer_sum_and_provenance_are_deterministic(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    for machine, amount in (("blade1tb", 10), ("phoebus", 20), ("whoart", 30)):
+        _write_daily(tmp_path, machine, "2026-01-01", exact=amount)
+        _write_daily(tmp_path, machine, "2026-01-02", estimated=amount)
+    args = {"period": "RANGE", "scope": "fleet", "start": "2026-01-01",
+            "end": "2026-01-02", "as_of": "2026-01-02", "prove": True}
+    first = mod.call_tool("tracker_query", args)["structuredContent"]
+    second = mod.call_tool("tracker_query", args)["structuredContent"]
+    assert first == second
+    assert first["status"] == "complete"
+    assert first["total"] == 120
+    assert first["observed_total"] == 120
+    assert first["quality_activity"] == {"exact": 60, "estimated": 60}
+    assert len(first["provenance"]["source_hashes"]) == 6
+    assert first["state"]["completeness"] == "COMPLETE"
+    assert first["state"]["truth_quality"] == "ESTIMATED"
+    assert first["state"]["recovery"] == "STOP_WITH_EXPLICIT_STATE"
+
+
+def test_tracker_query_partial_daily_cannot_advance_fleet_total(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    for machine in ("blade1tb", "phoebus", "whoart"):
+        _write_daily(tmp_path, machine, "2026-01-01", exact=4,
+                     partial=(machine == "whoart"))
+    data = mod.call_tool("tracker_query", {
+        "period": "LATEST", "scope": "fleet", "as_of": "2026-01-01",
+    })["structuredContent"]
+    assert data["total"] is None
+    assert data["observed_total"] == 12
+    assert data["partial_by_machine"] == {
+        "whoart": {"count": 1, "ranges": ["2026-01-01"]}}
+    assert "coverage.partial_daily_artifact" in data["state"]["reason_codes"]
+    assert "SNAPSHOT_INCOMPLETE" in data["state"]["reason_codes"]
+    assert data["state"]["validation"] == "VALID"
+    assert data["state"]["anomaly"] == "GAP"
+
+
+def test_tracker_state_distinguishes_observed_zero_from_no_hit(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    for machine in ("blade1tb", "phoebus", "whoart"):
+        _write_daily(tmp_path, machine, "2026-01-01", exact=0)
+    data = mod.call_tool("tracker_query", {
+        "period": "LATEST", "scope": "fleet", "as_of": "2026-01-01",
+    })["structuredContent"]
+    assert data["total"] == 0
+    assert data["state"]["completeness"] == "COMPLETE"
+    assert data["state"]["retrieval"] == "HIT"
+    assert data["state"]["observation"] == "PARSED"
+    assert data["state"]["execution"] == "COMPLETE"
+    assert data["state"]["confidence"] == "HIGH"
+    assert data["state"]["flags"]["observed"] is True
+    assert data["state"]["flags"]["complete"] is True
+    assert {
+        "observation", "completeness", "conflict", "freshness", "retrieval", "pagination", "availability",
+        "truth_quality", "validation", "canonicality", "computation", "provenance", "federation", "execution",
+        "anomaly", "confidence", "flags", "reason_codes", "evidence", "coverage", "canonical_key", "recovery",
+    } <= data["state"].keys()
+    assert {
+        "observed", "complete", "canonical", "current", "exact", "validated", "reconciled", "estimated",
+        "stale", "partial", "conflicted", "superseded", "missing_expected_entities", "missing_expected_nodes",
+        "missing_expected_dates", "provenance_incomplete", "retryable", "recoverable", "failover_available",
+        "continuation_available", "deeper_search_available", "exact_source_available",
+    } <= data["state"]["flags"].keys()
+
+
+def test_tracker_state_distinguishes_malformed_source_from_deferred_node(tmp_path):
+    daily = tmp_path / "dailies" / "blade1tb" / "2026-01-01.json"
+    daily.parent.mkdir(parents=True)
+    daily.write_text("not-json", encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("tracker_query_expanded_state", ROOT / "tracker_query.py")
+    tracker = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = tracker
+    spec.loader.exec_module(tracker)
+
+    data = tracker.tracker_query(
+        tmp_path, machines=["blade1tb"], period="LATEST", as_of="2026-01-01"
+    )
+    state = data["state"]
+    assert data["total"] is None
+    assert state["observation"] == "FETCHED"
+    assert state["validation"] == "INVALID"
+    assert state["federation"] == "NODE_FAILED"
+    assert state["provenance"] == "SOURCE_UNAVAILABLE"
+    assert state["flags"]["observed"] is True
+    assert state["flags"]["missing_expected_nodes"] is False
 
 
 def test_passive_live_status_never_runs_tracker_or_creates_cache(
