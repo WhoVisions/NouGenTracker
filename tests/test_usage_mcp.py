@@ -317,6 +317,17 @@ def test_tracker_state_distinguishes_observed_zero_from_no_hit(monkeypatch, tmp_
     assert data["state"]["confidence"] == "HIGH"
     assert data["state"]["flags"]["observed"] is True
     assert data["state"]["flags"]["complete"] is True
+    assert {
+        "observation", "completeness", "conflict", "freshness", "retrieval", "pagination", "availability",
+        "truth_quality", "validation", "canonicality", "computation", "provenance", "federation", "execution",
+        "anomaly", "confidence", "flags", "reason_codes", "evidence", "coverage", "canonical_key", "recovery",
+    } <= data["state"].keys()
+    assert {
+        "observed", "complete", "canonical", "current", "exact", "validated", "reconciled", "estimated",
+        "stale", "partial", "conflicted", "superseded", "missing_expected_entities", "missing_expected_nodes",
+        "missing_expected_dates", "provenance_incomplete", "retryable", "recoverable", "failover_available",
+        "continuation_available", "deeper_search_available", "exact_source_available",
+    } <= data["state"]["flags"].keys()
 
 
 def test_tracker_state_distinguishes_malformed_source_from_deferred_node(tmp_path):
