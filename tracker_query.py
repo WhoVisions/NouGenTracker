@@ -5,32 +5,153 @@ import hashlib
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal, TypedDict
 from zoneinfo import ZoneInfo
 
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation", "cache_read")
 
 
-def _recovery(state: dict[str, Any]) -> str:
+class TrackerFlags(TypedDict):
+    observed: bool
+    complete: bool
+    canonical: bool | None
+    current: bool | None
+    exact: bool | None
+    validated: bool
+    traceable: bool
+    reconciled: bool
+    estimated: bool
+    stale: bool | None
+    partial: bool
+    conflicted: bool | None
+    superseded: bool | None
+    missing_expected_entities: bool
+    missing_expected_nodes: bool
+    missing_expected_dates: bool
+    provenance_incomplete: bool
+    retryable: bool
+    recoverable: bool
+    failover_available: bool
+    continuation_available: bool
+    deeper_search_available: bool
+    exact_source_available: bool
+
+
+Availability = Literal[
+    "AVAILABLE", "UNAVAILABLE", "UNKNOWN", "UNREACHABLE", "DEGRADED", "INTERMITTENT", "TIMEOUT",
+    "RATE_LIMITED", "AUTH_FAILED", "PERMISSION_DENIED", "CIRCUIT_OPEN", "MAINTENANCE",
+]
+Observation = Literal[
+    "OBSERVED", "UNOBSERVED", "UNREAD", "DEFERRED", "SKIPPED", "DISCOVERED", "REQUESTED", "FETCHED",
+    "PARSED", "INDEXED",
+]
+Completeness = Literal[
+    "COMPLETE", "PARTIAL", "EMPTY", "TRUNCATED", "PAGINATED", "EXHAUSTED", "INDETERMINATE",
+    "COVERAGE_UNKNOWN", "UNKNOWN",
+]
+Freshness = Literal[
+    "LIVE", "CURRENT", "FRESH", "AGING", "STALE", "EXPIRED", "SUPERSEDED", "FUTURE_DATED",
+    "LATE_ARRIVING", "UNKNOWN",
+]
+TruthQuality = Literal[
+    "EXACT", "OBSERVED_EXACT", "ESTIMATED", "DERIVED", "INFERRED", "RECONCILED", "PROJECTED",
+    "APPROXIMATE", "UNKNOWN", "DISPUTED", "CONTRADICTED",
+]
+Validation = Literal[
+    "VALID", "UNVALIDATED", "VALIDATING", "INVALID", "SCHEMA_MISMATCH", "CHECKSUM_MISMATCH",
+    "RANGE_INVALID", "SEMANTICALLY_INVALID", "DUPLICATE", "POSSIBLE_DUPLICATE",
+]
+Canonicality = Literal[
+    "CANONICAL", "NON_CANONICAL", "CANDIDATE", "HISTORICAL", "SUPERSEDED", "AMENDED", "RETRACTED",
+    "ORPHANED", "CURRENT", "UNKNOWN",
+]
+Computation = Literal[
+    "RAW", "NORMALIZED", "AGGREGATED", "MATERIALIZED", "CACHED", "RECOMPUTED", "RECONCILED",
+    "ESTIMATED", "BACKFILLED",
+]
+Provenance = Literal[
+    "PROVEN", "TRACEABLE", "PARTIALLY_TRACEABLE", "SOURCE_MISSING", "SOURCE_UNAVAILABLE", "UNVERIFIED",
+    "ORPHANED",
+]
+Federation = Literal[
+    "FEDERATION_COMPLETE", "FEDERATION_PARTIAL", "NODE_MISSING", "NODE_DEFERRED", "NODE_FAILED",
+    "NODE_STALE", "NODE_DIVERGED", "FAILOVER_ACTIVE", "FAILOVER_EXHAUSTED",
+]
+Retrieval = Literal[
+    "EXACT_HIT", "CANONICAL_HIT", "LEXICAL_HIT", "SEMANTIC_HIT", "GRAPH_HIT", "HYBRID_HIT", "RERANKED",
+    "RECURSIVE_HIT", "FALLBACK_HIT", "CACHE_HIT", "NO_HIT", "HIT", "ERROR", "NOT_RUN",
+]
+Conflict = Literal[
+    "CONSISTENT", "CONFLICTED", "DIVERGENT", "AMBIGUOUS", "MULTIPLE_CANDIDATES", "RESOLVED_BY_RECENCY",
+    "RESOLVED_BY_PROVENANCE", "RESOLVED_BY_CANONICALITY", "UNRESOLVED", "CLEAR", "UNKNOWN",
+]
+Execution = Literal[
+    "PENDING", "RUNNING", "RETRYING", "BACKING_OFF", "FAILING_OVER", "COMPLETE", "FAILED", "CANCELLED",
+    "BUDGET_EXHAUSTED",
+]
+Pagination = Literal[
+    "NOT_REQUIRED", "ACTIVE", "CONTINUATION_AVAILABLE", "EXHAUSTED", "STALLED", "LOOP_DETECTED",
+    "CURSOR_INVALID", "COMPLETE", "CONTINUING", "NOT_APPLICABLE",
+]
+Anomaly = Literal[
+    "NORMAL", "OUTLIER", "SPIKE", "DROP", "GAP", "COUNTER_RESET", "NEGATIVE_DELTA", "DUPLICATE_COHORT",
+    "IDENTITY_DRIFT", "CLOCK_DRIFT", "IMPOSSIBLE_VALUE",
+]
+Confidence = Literal["CERTAIN", "HIGH", "MEDIUM", "LOW", "INSUFFICIENT"]
+
+
+class TrackerState(TypedDict):
+    status: Literal["SUCCESS", "DEGRADED"]
+    observation: Observation
+    completeness: Completeness
+    conflict: Conflict
+    freshness: Freshness
+    retrieval: Retrieval
+    pagination: Pagination
+    availability: Availability
+    truth_quality: TruthQuality
+    validation: Validation
+    canonicality: Canonicality
+    computation: Computation
+    provenance: Provenance
+    federation: Federation
+    execution: Execution
+    anomaly: Anomaly
+    confidence: Confidence
+    flags: TrackerFlags
+    reason_codes: list[str]
+    evidence: list[dict[str, Any]]
+    coverage: dict[str, Any]
+    canonical_key: str
+    recovery: str
+
+
+def _recovery(state: TrackerState) -> str:
     """Keep machine-actionable recovery separate from the human status label."""
     flags = state["flags"]
-    if state["completeness"] == "PARTIAL" and flags["missing_expected_nodes"] and flags["retryable"]:
+    if (state["completeness"] in {"PARTIAL", "COVERAGE_UNKNOWN", "INDETERMINATE"}
+            and (flags["missing_expected_nodes"] or flags["missing_expected_entities"]
+                 or flags["missing_expected_dates"])
+            and (flags["retryable"] or flags["recoverable"])):
         return "CONTINUE_FEDERATION"
-    if state["conflict"] == "CONFLICTED" and flags["traceable"]:
+    if state["conflict"] in {"CONFLICTED", "DIVERGENT", "AMBIGUOUS", "MULTIPLE_CANDIDATES", "UNRESOLVED"} and flags["traceable"]:
         return "TRACE_PROVENANCE"
-    if state["freshness"] == "STALE" and state["canonical_key"]:
+    if state["freshness"] in {"AGING", "STALE", "EXPIRED", "SUPERSEDED", "LATE_ARRIVING"} and state["canonical_key"]:
         return "REFRESH_CANONICAL"
     if state["retrieval"] == "NO_HIT" and not state["coverage"]["complete"]:
         return "EXPAND_RETRIEVAL"
     if state["retrieval"] == "NO_HIT" and state["coverage"]["complete"] and flags["deeper_search_available"]:
         return "DRIFT_RECURSE"
-    if state["pagination"] in {"STALLED", "LOOP_DETECTED"}:
+    if state["pagination"] in {"STALLED", "LOOP_DETECTED", "CURSOR_INVALID"}:
         return "REPARTITION_QUERY"
-    if state["availability"] == "TIMEOUT" and flags["failover_available"]:
+    if state["availability"] in {
+        "TIMEOUT", "UNAVAILABLE", "UNREACHABLE", "RATE_LIMITED", "AUTH_FAILED", "PERMISSION_DENIED",
+        "CIRCUIT_OPEN",
+    } and flags["failover_available"]:
         return "FAILOVER"
-    if state["truth_quality"] == "ESTIMATED" and flags["exact_source_available"]:
+    if state["truth_quality"] in {"ESTIMATED", "DERIVED", "INFERRED", "PROJECTED", "APPROXIMATE", "DISPUTED"} and flags.get("exact_source_available", False):
         return "RECONCILE"
-    if state["canonicality"] == "SUPERSEDED":
+    if state["canonicality"] in {"SUPERSEDED", "AMENDED", "RETRACTED", "ORPHANED"}:
         return "FOLLOW_SUPERSESSION"
     return "STOP_WITH_EXPLICIT_STATE"
 
@@ -192,8 +313,9 @@ def tracker_query(
             metric_total += sum(record.get(bucket, {}).get(field, 0)
                                 for bucket in ("exact", "estimated")
                                 for field in TOKEN_FIELDS)
+        malformed_days = any(item["machine"] == machine for item in malformed)
         state = "OBSERVED_ZERO" if not missing_days and not partial_days and all(v == 0 for v in total.values()) else (
-            "COMPLETE" if not missing_days else ("PARTIAL" if found_days else "DEFERRED"))
+            "COMPLETE" if not missing_days else ("PARTIAL" if found_days or malformed_days else "DEFERRED"))
         if partial_days:
             state = "PARTIAL"
         if missing_days:
@@ -226,32 +348,73 @@ def tracker_query(
     reason_codes = []
     if missing_by_machine:
         reason_codes.append("coverage.missing_machine_days")
+        reason_codes.append("EXPECTED_DATE_MISSING")
     if partial_by_machine:
         reason_codes.append("coverage.partial_daily_artifact")
+        reason_codes.append("SNAPSHOT_INCOMPLETE")
+    if deferred_machines:
+        reason_codes.append("EXPECTED_NODE_NOT_QUERIED")
     if malformed:
         reason_codes.append("artifact.malformed")
     if estimated_total:
         reason_codes.append("quality.estimated_tokens_present")
-    state = {
+    if not source_hashes:
+        reason_codes.append("RETRIEVAL_CONFIDENCE_LOW")
+    has_observations = bool(source_hashes)
+    has_files = has_observations or bool(malformed)
+    retryable = bool(deferred_machines or missing_by_machine or partial_by_machine)
+    state: TrackerState = {
         "status": "SUCCESS" if complete else "DEGRADED",
-        "observation": "PARSED" if any(row["observed_days"] for row in machine_rows) else "DEFERRED",
+        "observation": "PARSED" if has_observations else ("FETCHED" if malformed else "DEFERRED"),
         "completeness": "COMPLETE" if complete else "PARTIAL",
         "conflict": "UNKNOWN",
         "freshness": "UNKNOWN",
         "retrieval": "HIT" if any(row["observed_days"] for row in machine_rows) else "NO_HIT",
         "pagination": "NOT_APPLICABLE",
         "availability": "AVAILABLE",
-        "truth_quality": "ESTIMATED" if estimated_total else "EXACT",
+        "truth_quality": "ESTIMATED" if estimated_total else ("EXACT" if has_observations else "UNKNOWN"),
+        "validation": "INVALID" if malformed else "VALID",
         "canonicality": "UNKNOWN",
+        "computation": "AGGREGATED" if has_observations else "RAW",
+        "provenance": (
+            "PROVEN" if prove else (
+                "TRACEABLE" if has_observations else ("SOURCE_UNAVAILABLE" if malformed else "SOURCE_MISSING")
+            )
+        ),
+        "federation": (
+            "FEDERATION_COMPLETE" if complete else (
+                "NODE_FAILED" if malformed and not deferred_machines else (
+                    "NODE_DEFERRED" if deferred_machines else "FEDERATION_PARTIAL"
+                )
+            )
+        ),
+        "execution": "COMPLETE",
+        "anomaly": "GAP" if retryable else "NORMAL",
+        "confidence": "HIGH" if complete else ("MEDIUM" if has_observations else "INSUFFICIENT"),
         "flags": {
+            "observed": has_files,
+            "complete": complete,
+            "canonical": None,
+            "current": None,
+            "exact": has_observations and not bool(estimated_total) and not malformed,
+            "validated": not malformed,
+            "reconciled": False,
+            "estimated": bool(estimated_total),
+            "stale": None,
+            "partial": not complete,
+            "conflicted": None,
+            "superseded": None,
+            "missing_expected_entities": False,
             "missing_expected_nodes": bool(deferred_machines),
-            "retryable": bool(deferred_machines),
+            "missing_expected_dates": bool(missing_by_machine or partial_by_machine),
+            "provenance_incomplete": not prove or bool(malformed),
+            "retryable": retryable,
+            "recoverable": retryable,
             "traceable": bool(prove),
             "deeper_search_available": False,
             "failover_available": False,
+            "continuation_available": retryable,
             "exact_source_available": False,
-            "exact": not bool(estimated_total),
-            "current": None,
         },
         "reason_codes": reason_codes,
         "evidence": [

@@ -257,6 +257,11 @@ def test_tracker_query_returns_partial_floor_and_deferred_not_zero(monkeypatch, 
     assert data["state"]["coverage"]["missing_nodes"] == ["phoebus", "whoart"]
     assert data["state"]["recovery"] == "CONTINUE_FEDERATION"
     assert "coverage.missing_machine_days" in data["state"]["reason_codes"]
+    assert "EXPECTED_NODE_NOT_QUERIED" in data["state"]["reason_codes"]
+    assert data["state"]["federation"] == "NODE_DEFERRED"
+    assert data["state"]["execution"] == "COMPLETE"
+    assert data["state"]["flags"]["missing_expected_nodes"] is True
+    assert data["state"]["flags"]["missing_expected_dates"] is True
 
 
 def test_tracker_query_complete_integer_sum_and_provenance_are_deterministic(monkeypatch, tmp_path):
@@ -291,7 +296,10 @@ def test_tracker_query_partial_daily_cannot_advance_fleet_total(monkeypatch, tmp
     assert data["observed_total"] == 12
     assert data["partial_by_machine"] == {
         "whoart": {"count": 1, "ranges": ["2026-01-01"]}}
-    assert data["state"]["reason_codes"] == ["coverage.partial_daily_artifact"]
+    assert "coverage.partial_daily_artifact" in data["state"]["reason_codes"]
+    assert "SNAPSHOT_INCOMPLETE" in data["state"]["reason_codes"]
+    assert data["state"]["validation"] == "VALID"
+    assert data["state"]["anomaly"] == "GAP"
 
 
 def test_tracker_state_distinguishes_observed_zero_from_no_hit(monkeypatch, tmp_path):
@@ -305,6 +313,32 @@ def test_tracker_state_distinguishes_observed_zero_from_no_hit(monkeypatch, tmp_
     assert data["state"]["completeness"] == "COMPLETE"
     assert data["state"]["retrieval"] == "HIT"
     assert data["state"]["observation"] == "PARSED"
+    assert data["state"]["execution"] == "COMPLETE"
+    assert data["state"]["confidence"] == "HIGH"
+    assert data["state"]["flags"]["observed"] is True
+    assert data["state"]["flags"]["complete"] is True
+
+
+def test_tracker_state_distinguishes_malformed_source_from_deferred_node(tmp_path):
+    daily = tmp_path / "dailies" / "blade1tb" / "2026-01-01.json"
+    daily.parent.mkdir(parents=True)
+    daily.write_text("not-json", encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("tracker_query_expanded_state", ROOT / "tracker_query.py")
+    tracker = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = tracker
+    spec.loader.exec_module(tracker)
+
+    data = tracker.tracker_query(
+        tmp_path, machines=["blade1tb"], period="LATEST", as_of="2026-01-01"
+    )
+    state = data["state"]
+    assert data["total"] is None
+    assert state["observation"] == "FETCHED"
+    assert state["validation"] == "INVALID"
+    assert state["federation"] == "NODE_FAILED"
+    assert state["provenance"] == "SOURCE_UNAVAILABLE"
+    assert state["flags"]["observed"] is True
+    assert state["flags"]["missing_expected_nodes"] is False
 
 
 def test_passive_live_status_never_runs_tracker_or_creates_cache(
