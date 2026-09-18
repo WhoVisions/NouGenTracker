@@ -3,9 +3,9 @@
   "date": "2026-09-17",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 169300895,
-    "input_tokens": 276271,
-    "output_tokens": 53384,
+    "cache_read": 228623716,
+    "input_tokens": 306384,
+    "output_tokens": 64235,
     "reasoning": 0
   },
   "exact": {
@@ -15,16 +15,16 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-09-17T16:11:22-04:00",
+  "generated_at": "2026-09-17T20:11:11-04:00",
   "generated_by": "claude-cli",
-  "invocations": 549,
+  "invocations": 661,
   "machine": "blade1tb",
   "models": {
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 169300895,
-      "input_tokens": 276271,
-      "output_tokens": 53384,
+      "cache_read": 228623716,
+      "input_tokens": 306384,
+      "output_tokens": 64235,
       "reasoning": 0
     }
   },
@@ -36,6 +36,9 @@
     "011073182e95e2bf",
     "0130d5e43fbb283d",
     "0178cb14a4786acb",
+    "01e7badb5c10e67a",
+    "02b7a8674155a69b",
+    "02f69b6d931142b2",
     "0369868f371c5281",
     "0376e15a707b1bc8",
     "037a7331c18b1abc",
@@ -47,10 +50,13 @@
     "05dc519c5c8461bc",
     "062157b6cf2b17b6",
     "0626665642040b97",
+    "06a6083af3f995fe",
     "0755dfd764040744",
+    "07e75245d13272f8",
     "081a819335d50da6",
     "08c8d099b71435d9",
     "0930323c6abf4654",
+    "0983ee10b3d4b93d",
     "0996232918fbc868",
     "09de65ee0d57c0ec",
     "0b0c22a6ec703433",
@@ -58,6 +64,8 @@
     "0b34cddba0203aec",
     "0b796aa1392009ce",
     "0bc8493b4051c3d8",
+    "0c25a5f1b546d9d2",
+    "0c50250545f3849a",
     "0c88becab3c29ba1",
     "0c9d3838154d4d3b",
     "0caed6033140d8bf",
@@ -65,9 +73,13 @@
     "0ec7e0270bf18d4a",
     "0f0e5980b2d57b81",
     "0f7cde00815c40de",
+    "0f842e2dd4b48205",
+    "0fcba8970e18c6b6",
     "0ff3319ba9530657",
     "10005e0d992c3251",
+    "10214d2997557d58",
     "10b9f804c74bfab7",
+    "11ac2e91a0e541bb",
     "11cf62ee113589f5",
     "11ec964704ca313f",
     "12af0f0c6fe562ed",
@@ -83,34 +95,22 @@
     "163e86a9edba3964",
     "166c15744db46170",
     "16c615671584a42a",
-    "178bf703dc7709f9",
-    "17b9fb310ecf92b9",
-    "17dd92f3c4bf38be",
-    "17e4ecaa4b385572",
-    "1812a9c56e98c09e",
-    "1976ce1efd34494a",
-    "1c1228368b7d13d2",
-    "1c8737a15e607cbe",
-    "1ca8e7429e14bf22",
-    "1cc6aac4d4907517",
-    "1d2beb1cf55c62b1",
-    "1d5d45a79184cc51",
-    "1da36759fcfc7b58"
+    "178bf703dc7709f9"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 169300895,
-      "input_tokens": 276271,
-      "output_tokens": 53384,
+      "cache_read": 228623716,
+      "input_tokens": 306384,
+      "output_tokens": 64235,
       "reasoning": 0
     }
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 169300895,
-    "input_tokens": 276271,
-    "output_tokens": 53384,
+    "cache_read": 228623716,
+    "input_tokens": 306384,
+    "output_tokens": 64235,
     "reasoning": 0
   }
 }
