@@ -1,0 +1,169 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-17",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 223185257,
+    "input_tokens": 502907,
+    "output_tokens": 221775,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 100264,
+    "cache_read": 399444,
+    "input_tokens": 9336,
+    "output_tokens": 1474,
+    "reasoning": 188
+  },
+  "generated_at": "2026-09-19T05:14:24-04:00",
+  "generated_by": "antigravity",
+  "invocations": 1541,
+  "machine": "whoart",
+  "models": {
+    "claude-opus-5": {
+      "cache_creation": 100264,
+      "cache_read": 337236,
+      "input_tokens": 10,
+      "output_tokens": 1159,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 223185257,
+      "input_tokens": 502907,
+      "output_tokens": 221775,
+      "reasoning": 0
+    },
+    "gpt-5.6-luna": {
+      "cache_creation": 0,
+      "cache_read": 62208,
+      "input_tokens": 9326,
+      "output_tokens": 315,
+      "reasoning": 188
+    }
+  },
+  "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.8696,
+      "distinct_sessions": 3,
+      "peak_context_used_percent": 6.24,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 0.0,
+          "peak_used_percent": 0.0,
+          "resets_at": 1789718552,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 45.0,
+          "peak_used_percent": 45.0,
+          "resets_at": 1789963631,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 72037,
+      "uncached_input_tokens": 9326
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "00056cf1bf9e4e0a",
+    "0012e3bf9755bc36",
+    "0038c4f357dc6dc8",
+    "00b6f13f958c0335",
+    "00cc8fe70632c3e9",
+    "00cf1ad1f95339b9",
+    "00d3d9b51723caa5",
+    "0130fa2932d6a7fb",
+    "016e00811b2276de",
+    "01a040c7858aa49f",
+    "01a0c360cba2deeb",
+    "01a564574e9e3774",
+    "01c6331b53678497",
+    "01c9de3965a0f3e0",
+    "02092f855dd19e30",
+    "021b4ea15fef2912",
+    "02418a9e5890c7fc",
+    "02458700b9200e71",
+    "02468b3e03021ff6",
+    "02567367978b8a7a",
+    "025cac65ff3a61d9",
+    "02678b323789b3a8",
+    "0288f053ef7e64ee",
+    "02b72f13fec0f3a0",
+    "02b7d0ead4b34f0d",
+    "02ba5c5efc7982c4",
+    "02dac434f96c8f7e",
+    "034c4ef64cffb60b",
+    "038dc309b61de5b0",
+    "039424307e727518",
+    "039cd440c0e49f4e",
+    "039f1cec60f53bd8",
+    "03a4eceeae007b2f",
+    "03a9b408f5134019",
+    "03e124a4a4b826fa",
+    "041959d052dc4110",
+    "042497c4ed073303",
+    "04287ce66dd40b20",
+    "047c265f5d1c2ea4",
+    "04977fb77448ba40",
+    "04b7088381b25fa2",
+    "04c001ca1bda1f44",
+    "04f8a386b7a131b6",
+    "0505efd0af460a05",
+    "052fa86c73ae87a6",
+    "054658a4d62a559e",
+    "0576f3f09bfc66f8",
+    "05bef56093659676",
+    "05c18396ffbd9776",
+    "05d0207035106cb2",
+    "0673a073e7ddaf02",
+    "067b9bf893cc67e3",
+    "069b299312bb3862",
+    "06b6881702e0ceb2",
+    "06bc0ed7c39d32e9",
+    "06f1e580633dfcb2",
+    "0701b8f9400e809e",
+    "0707e930cc04afb4",
+    "0795e5d09cc77309",
+    "07b815371bf1e581",
+    "07d021645feeb1df",
+    "08228323dd1b102e",
+    "0837b2b5a609edff",
+    "085ac309f7ca846d"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 223185257,
+      "input_tokens": 502907,
+      "output_tokens": 221775,
+      "reasoning": 0
+    },
+    "Claude Code": {
+      "cache_creation": 100264,
+      "cache_read": 337236,
+      "input_tokens": 10,
+      "output_tokens": 1159,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 62208,
+      "input_tokens": 9326,
+      "output_tokens": 315,
+      "reasoning": 188
+    }
+  },
+  "totals": {
+    "cache_creation": 100264,
+    "cache_read": 223584701,
+    "input_tokens": 512243,
+    "output_tokens": 223249,
+    "reasoning": 188
+  }
+}
