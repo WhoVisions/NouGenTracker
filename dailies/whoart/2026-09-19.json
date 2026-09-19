@@ -1,0 +1,68 @@
+{
+ "correction": {
+  "at": "2026-09-19T05:13:04-04:00",
+  "prior_backup": "dailies/whoart/_pre_correction_20260829/2026-09-19.json",
+  "reason": "Regenerate whoart usage dailies with backfilled Google Antigravity tokens and unified multi-lane telemetry",
+  "source": "claude-code ~/.claude/projects/**/*.jsonl (exact) + codex ~/.codex/**/*.jsonl (exact) + antigravity ~/.gemini/antigravity*/brain/**/transcript.jsonl (estimated)"
+ },
+ "counter": "cfae0dd41682",
+ "date": "2026-09-19",
+ "estimated": {
+  "cache_creation": 0,
+  "cache_read": 120036809,
+  "input_tokens": 156276,
+  "output_tokens": 63789,
+  "reasoning": 0
+ },
+ "exact": {
+  "cache_creation": 0,
+  "cache_read": 2584832,
+  "input_tokens": 2680472,
+  "output_tokens": 7760,
+  "reasoning": 0
+ },
+ "generated_at": "2026-09-19T05:13:04-04:00",
+ "generated_by": "antigravity",
+ "invocations": 973,
+ "machine": "whoart",
+ "models": {
+  "codex": {
+   "cache_creation": 0,
+   "cache_read": 2584832,
+   "input_tokens": 2680472,
+   "output_tokens": 7760,
+   "reasoning": 0
+  },
+  "gemini-3-flash-preview (estimated)": {
+   "cache_creation": 0,
+   "cache_read": 120036809,
+   "input_tokens": 156276,
+   "output_tokens": 63789,
+   "reasoning": 0
+  }
+ },
+ "partial": true,
+ "sources": {
+  "Antigravity (Fallback)": {
+   "cache_creation": 0,
+   "cache_read": 120036809,
+   "input_tokens": 156276,
+   "output_tokens": 63789,
+   "reasoning": 0
+  },
+  "OpenAI Codex": {
+   "cache_creation": 0,
+   "cache_read": 2584832,
+   "input_tokens": 2680472,
+   "output_tokens": 7760,
+   "reasoning": 0
+  }
+ },
+ "totals": {
+  "cache_creation": 0,
+  "cache_read": 122621641,
+  "input_tokens": 2836748,
+  "output_tokens": 71549,
+  "reasoning": 0
+ }
+}
