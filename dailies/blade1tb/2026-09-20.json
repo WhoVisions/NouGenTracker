@@ -3,21 +3,21 @@
   "date": "2026-09-20",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 15566972,
-    "input_tokens": 449216,
-    "output_tokens": 118826,
+    "cache_read": 16847238,
+    "input_tokens": 538567,
+    "output_tokens": 138392,
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 5437325,
-    "cache_read": 202155350,
-    "input_tokens": 1781,
-    "output_tokens": 529911,
+    "cache_creation": 6484822,
+    "cache_read": 207425250,
+    "input_tokens": 1807,
+    "output_tokens": 561648,
     "reasoning": 0
   },
-  "generated_at": "2026-09-20T16:03:06-04:00",
+  "generated_at": "2026-09-20T20:00:38-04:00",
   "generated_by": "claude-cli",
-  "invocations": 1686,
+  "invocations": 1819,
   "machine": "blade1tb",
   "models": {
     "<synthetic>": {
@@ -42,17 +42,17 @@
       "reasoning": 0
     },
     "claude-sonnet-5": {
-      "cache_creation": 4538527,
-      "cache_read": 160577571,
-      "input_tokens": 1278,
-      "output_tokens": 379770,
+      "cache_creation": 5586024,
+      "cache_read": 165847471,
+      "input_tokens": 1304,
+      "output_tokens": 411507,
       "reasoning": 0
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 15566972,
-      "input_tokens": 449216,
-      "output_tokens": 118826,
+      "cache_read": 16847238,
+      "input_tokens": 538567,
+      "output_tokens": 138392,
       "reasoning": 0
     }
   },
@@ -66,6 +66,7 @@
     "00cbe54090c8066e",
     "011ffd9479b6481f",
     "014335dfe745a540",
+    "015f815a9be029b2",
     "0169b90b3171f39f",
     "0169ff74ea38edef",
     "01926d457c638503",
@@ -74,6 +75,7 @@
     "01dbabaa3ea9d9a9",
     "01e84b3bef2d9926",
     "01f6e5a73716606d",
+    "01fc1af76929d9be",
     "025473e9dcc9d030",
     "0276a98ba24502ed",
     "027d621401e64d59",
@@ -83,19 +85,23 @@
     "02a7a524810d7a80",
     "0309c649ad231c5e",
     "035e0337cf4d9938",
+    "03610ce80286cf3a",
     "037a30a1f29057f5",
     "03cedf458042cb58",
     "03d6685d63ca658b",
+    "03dbda8ae99544ad",
     "04b0e531b25cb402",
     "04b7e6cd32f9bbb1",
     "04c016e1b7a53528",
     "0500e5f440114b1a",
     "0558d9c88ce19f8d",
     "05635a7f81c70c16",
+    "0591cd0e5293ada6",
     "05aaba934fb8424b",
     "05cfa3cbc8c109d3",
     "062e8db5b1031ab7",
     "063f97bec1269154",
+    "0646617896878f84",
     "0646e2c118bd3d60",
     "069999ba36c17a92",
     "069c978cceb10fb1",
@@ -109,6 +115,7 @@
     "07b063f20eaa1981",
     "07f0650cd9f061d7",
     "07fea196fcda7ca5",
+    "08079aa0d15a1405",
     "0821ddbdd61834a2",
     "082a31d81109b87e",
     "082d7bbd159f053e",
@@ -116,36 +123,29 @@
     "086c3a0f3953d4a2",
     "08709ace0245963e",
     "0884ee579a4d087c",
-    "08a5ff102548add5",
-    "08acd41ea9da027e",
-    "0976f62a8cd0c97d",
-    "0982299cfec8d263",
-    "098437d3be88c3e5",
-    "09eba7ccdd125293",
-    "0a1ecda8b20d1819",
-    "0a29fc79a9f9708c"
+    "08a5ff102548add5"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 15566972,
-      "input_tokens": 449216,
-      "output_tokens": 118826,
+      "cache_read": 16847238,
+      "input_tokens": 538567,
+      "output_tokens": 138392,
       "reasoning": 0
     },
     "Claude Code": {
-      "cache_creation": 5437325,
-      "cache_read": 202155350,
-      "input_tokens": 1781,
-      "output_tokens": 529911,
+      "cache_creation": 6484822,
+      "cache_read": 207425250,
+      "input_tokens": 1807,
+      "output_tokens": 561648,
       "reasoning": 0
     }
   },
   "totals": {
-    "cache_creation": 5437325,
-    "cache_read": 217722322,
-    "input_tokens": 450997,
-    "output_tokens": 648737,
+    "cache_creation": 6484822,
+    "cache_read": 224272488,
+    "input_tokens": 540374,
+    "output_tokens": 700040,
     "reasoning": 0
   }
 }
