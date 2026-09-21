@@ -9,15 +9,15 @@
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 7952240,
-    "cache_read": 278903125,
-    "input_tokens": 2083,
-    "output_tokens": 770261,
+    "cache_creation": 7960675,
+    "cache_read": 281493763,
+    "input_tokens": 2093,
+    "output_tokens": 780718,
     "reasoning": 0
   },
-  "generated_at": "2026-09-20T23:59:34-04:00",
+  "generated_at": "2026-09-21T00:24:35-04:00",
   "generated_by": "claude-cli",
-  "invocations": 2145,
+  "invocations": 2150,
   "machine": "blade1tb",
   "models": {
     "<synthetic>": {
@@ -42,10 +42,10 @@
       "reasoning": 0
     },
     "claude-sonnet-5": {
-      "cache_creation": 6934400,
-      "cache_read": 235448257,
-      "input_tokens": 1544,
-      "output_tokens": 607393,
+      "cache_creation": 6942835,
+      "cache_read": 238038895,
+      "input_tokens": 1554,
+      "output_tokens": 617850,
       "reasoning": 0
     },
     "gemini-3-flash-preview (estimated)": {
@@ -56,7 +56,7 @@
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
@@ -96,6 +96,7 @@
     "03d6685d63ca658b",
     "03dbda8ae99544ad",
     "03f1d44e77e82ba8",
+    "04507bb57ae3719b",
     "0457646892043916",
     "0499ace1f9687ca1",
     "04b0e531b25cb402",
@@ -122,8 +123,7 @@
     "07416359bb907756",
     "074858b2be749bc0",
     "07503cd52fbd3d3a",
-    "076e86f2186f1f59",
-    "0783294b14b29d1e"
+    "076e86f2186f1f59"
   ],
   "sources": {
     "Antigravity (Fallback)": {
@@ -134,18 +134,18 @@
       "reasoning": 0
     },
     "Claude Code": {
-      "cache_creation": 7952240,
-      "cache_read": 278903125,
-      "input_tokens": 2083,
-      "output_tokens": 770261,
+      "cache_creation": 7960675,
+      "cache_read": 281493763,
+      "input_tokens": 2093,
+      "output_tokens": 780718,
       "reasoning": 0
     }
   },
   "totals": {
-    "cache_creation": 7952240,
-    "cache_read": 299797421,
-    "input_tokens": 647746,
-    "output_tokens": 937701,
+    "cache_creation": 7960675,
+    "cache_read": 302388059,
+    "input_tokens": 647756,
+    "output_tokens": 948158,
     "reasoning": 0
   }
 }
