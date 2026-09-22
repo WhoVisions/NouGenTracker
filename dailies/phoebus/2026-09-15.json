@@ -1,0 +1,60 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-15",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 61203,
+    "input_tokens": 9012,
+    "output_tokens": 1392,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "generated_at": "2026-09-21T23:14:53-04:00",
+  "generated_by": "unknown-agent",
+  "invocations": 8,
+  "machine": "phoebus",
+  "models": {
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 61203,
+      "input_tokens": 9012,
+      "output_tokens": 1392,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "1728de5f60958a01",
+    "3110e8aa174232f1",
+    "579cbdccd754f561",
+    "636d45082b48e9d5",
+    "d22ff900056cdb0f",
+    "da94dd56ef1c1840",
+    "e50acd1feceff6ca",
+    "ef22fd472a9e8eda"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 61203,
+      "input_tokens": 9012,
+      "output_tokens": 1392,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 61203,
+    "input_tokens": 9012,
+    "output_tokens": 1392,
+    "reasoning": 0
+  }
+}
