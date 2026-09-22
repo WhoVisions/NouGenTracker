@@ -307,3 +307,24 @@ def test_token_tracker_price_for_uses_resolver():
 
     # Unknown model falls through to DEFAULT_PRICING
     assert tt.price_for("ghost-model-never-existed") == tt.DEFAULT_PRICING
+
+
+# --- Gate 2.c per-family cache ratio (hyperion follow-ups 3+4, 2026-09-21) --
+def test_mythos_tier_cache_ratio_passes_gate():
+    from pricing_live import validate_live_price
+    # live page lists cache_read at 0.025 x input for the 5.1 tier
+    assert validate_live_price("claude-fable-5.1", 10.0, 50.0, 0.25) == (True, "")
+    assert validate_live_price("claude-mythos-5.1", 10.0, 50.0, 0.25) == (True, "")
+
+
+def test_other_claude_families_still_require_ten_percent():
+    from pricing_live import validate_live_price
+    assert validate_live_price("claude-opus-5", 5.0, 25.0, 0.5)[0]
+    ok, reason = validate_live_price("claude-opus-5", 5.0, 25.0, 0.125)  # 0.025 is wrong for opus
+    assert not ok and "differs from 0.1" in reason
+
+
+def test_mythos_tier_wrong_ratio_still_rejected():
+    from pricing_live import validate_live_price
+    ok, reason = validate_live_price("claude-fable-5.1", 10.0, 50.0, 1.0)  # 0.10 is wrong for fable-5.1
+    assert not ok and "differs from 0.025" in reason

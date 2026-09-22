@@ -161,6 +161,21 @@ def detect_unit_multiplier(text: str) -> float | None:
 
 # --- Invariant Gates ---------------------------------------------------------
 
+# Published cache_read/input ratio per Claude family. Anything not listed is 0.10.
+CLAUDE_CACHE_RATIO_BY_FAMILY = {
+    "fable-5.1": 0.025,
+    "mythos-5.1": 0.025,
+}
+
+
+def expected_claude_cache_ratio(key: str) -> float:
+    low = key.lower()
+    for family, ratio in CLAUDE_CACHE_RATIO_BY_FAMILY.items():
+        if family in low:
+            return ratio
+    return 0.10
+
+
 def validate_live_price(key: str, inp: float, out: float, cache_read: float) -> tuple[bool, str]:
     """Validate a parsed live price against invariant gates (a, b, c, d).
 
@@ -188,16 +203,24 @@ def validate_live_price(key: str, inp: float, out: float, cache_read: float) -> 
     if cache_read >= inp:
         return False, f"Gate 2.c violation: cache_read_rate {cache_read} >= input_rate {inp}"
 
-    # For Claude models: assert cache_read ~= 0.10 x input
+    # For Claude models: assert cache_read ~= the family's published ratio of
+    # input. 0.10 for every family through Opus/Sonnet 5; the Mythos tier
+    # (fable-5.1 / mythos-5.1) lists cache_read at 0.025 x input. A gate that
+    # hard-coded 0.10 rejected those rows outright, which left every day with
+    # Fable 5.1 usage unpriceable and the fleet report at 0 machines
+    # (2026-09-21, hyperion follow-ups 3+4). Widening the tolerance would
+    # weaken the guard for every model; a per-family expectation does not.
     if "claude" in key.lower():
         tol_env = os.environ.get("NOUGEN_PRICING_RATIO_TOL", "0.02")
         try:
             tol = float(tol_env)
         except ValueError:
             tol = 0.02
+        expected = expected_claude_cache_ratio(key)
         ratio = cache_read / inp
-        if abs(ratio - 0.10) > tol:
-            return False, f"Gate 2.c violation: Claude cache_read ratio {ratio:.4f} differs from 0.10 by > {tol}"
+        if abs(ratio - expected) > tol:
+            return False, (f"Gate 2.c violation: Claude cache_read ratio {ratio:.4f} "
+                           f"differs from {expected} by > {tol}")
 
     # Gate 2.d: cache_write is derived (1.25 x input, 5-min tier), never parsed
     return True, ""
