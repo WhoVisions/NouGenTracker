@@ -3,8 +3,8 @@
   "date": "2026-09-15",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 61203,
-    "input_tokens": 9012,
+    "cache_read": 8353918,
+    "input_tokens": 3013,
     "output_tokens": 1392,
     "reasoning": 0
   },
@@ -15,15 +15,15 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-09-21T23:14:53-04:00",
+  "generated_at": "2026-09-23T11:51:00-04:00",
   "generated_by": "unknown-agent",
   "invocations": 8,
   "machine": "phoebus",
   "models": {
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 61203,
-      "input_tokens": 9012,
+      "cache_read": 8353918,
+      "input_tokens": 3013,
       "output_tokens": 1392,
       "reasoning": 0
     }
@@ -32,28 +32,28 @@
   "provider_stats": {},
   "schema": 3,
   "sketch": [
-    "1728de5f60958a01",
-    "3110e8aa174232f1",
-    "579cbdccd754f561",
-    "636d45082b48e9d5",
-    "d22ff900056cdb0f",
-    "da94dd56ef1c1840",
-    "e50acd1feceff6ca",
-    "ef22fd472a9e8eda"
+    "1a3a2e962b1f1fb9",
+    "27ef5333315fb8a4",
+    "339c4137bd998001",
+    "6e552b97933d4f57",
+    "93c483939514f0ab",
+    "9735bbaa5d1bb5f8",
+    "d9be4a5920de7dea",
+    "ff6fd87a5709c4cf"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 61203,
-      "input_tokens": 9012,
+      "cache_read": 8353918,
+      "input_tokens": 3013,
       "output_tokens": 1392,
       "reasoning": 0
     }
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 61203,
-    "input_tokens": 9012,
+    "cache_read": 8353918,
+    "input_tokens": 3013,
     "output_tokens": 1392,
     "reasoning": 0
   }

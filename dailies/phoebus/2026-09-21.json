@@ -3,8 +3,8 @@
   "date": "2026-09-21",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 0,
-    "input_tokens": 6143,
+    "cache_read": 58032,
+    "input_tokens": 143,
     "output_tokens": 93,
     "reasoning": 0
   },
@@ -15,7 +15,7 @@
     "output_tokens": 465648,
     "reasoning": 0
   },
-  "generated_at": "2026-09-23T11:33:55-04:00",
+  "generated_at": "2026-09-23T11:51:00-04:00",
   "generated_by": "unknown-agent",
   "invocations": 694,
   "machine": "phoebus",
@@ -50,8 +50,8 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 0,
-      "input_tokens": 6143,
+      "cache_read": 58032,
+      "input_tokens": 143,
       "output_tokens": 93,
       "reasoning": 0
     }
@@ -128,8 +128,8 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 0,
-      "input_tokens": 6143,
+      "cache_read": 58032,
+      "input_tokens": 143,
       "output_tokens": 93,
       "reasoning": 0
     },
@@ -143,8 +143,8 @@
   },
   "totals": {
     "cache_creation": 4270313,
-    "cache_read": 245355707,
-    "input_tokens": 7955,
+    "cache_read": 245413739,
+    "input_tokens": 1955,
     "output_tokens": 465741,
     "reasoning": 0
   }
