@@ -351,3 +351,20 @@ def test_unresolvable_point_release_still_falls_back_safely(monkeypatch):
     inp, out, cache_read, src = pricing_live.resolve_price(
         "totally-unknown-model-3", fallback_pricing={}, default_pricing=(1.0, 4.0, 0.1, "default-unpriced"))
     assert (inp, out, cache_read, src) == (1.0, 4.0, 0.1, "default-unpriced")
+
+
+def test_cache_ratios_are_learned_from_page_prose():
+    text = ("| Claude Opus 5.5 | $4 / MTok | $5 / MTok | $8 / MTok | $0.20 / MTok | $20 / MTok |\n"
+            "Cache read: 0.1x base input price (0.025x on Claude Fable 5.1 and Claude Mythos 5.1; "
+            "0.05x on Claude Opus 5.5)")
+    learned = pricing_live.learn_claude_cache_ratios(text)
+    assert learned == {"fable-5.1": 0.025, "mythos-5.1": 0.025, "opus-5.5": 0.05}
+    assert pricing_live.expected_claude_cache_ratio("claude-opus-5-5") == 0.05
+    assert pricing_live.expected_claude_cache_ratio("claude-opus-5") == 0.10
+
+
+def test_synthetic_and_thinking_variants_resolve():
+    assert pricing_live.resolve_price("<synthetic>")[:3] == (0.0, 0.0, 0.0)
+    base = pricing_live.resolve_price("claude-opus-4-6", fallback_pricing={"claude-opus-4-6": (5.0, 25.0, 0.5)})
+    think = pricing_live.resolve_price("claude-opus-4-6-thinking", fallback_pricing={"claude-opus-4-6": (5.0, 25.0, 0.5)})
+    assert think[:3] == base[:3]

@@ -168,10 +168,33 @@ CLAUDE_CACHE_RATIO_BY_FAMILY = {
 }
 
 
+_RATIO_CLAUSE = re.compile(r"(\d*\.\d+)\s*x\s+on\s+((?:Claude\s+[A-Za-z]+\s+[\d.]+(?:\s*(?:,|and)\s*)?)+)", re.I)
+_RATIO_MODEL = re.compile(r"Claude\s+([A-Za-z]+)\s+([\d.]+)", re.I)
+
+
+def learn_claude_cache_ratios(text: str) -> dict:
+    """Read per-family cache-hit multipliers from the pricing page itself.
+
+    The page states exceptions in prose ("0.05x on Claude Opus 5.5"); a
+    hardcoded map goes stale the day a new family ships with its own ratio
+    and gate 2.c then rejects that family's genuine live row.
+    """
+    learned = {}
+    for m in _RATIO_CLAUSE.finditer(text or ""):
+        ratio = float(m.group(1))
+        if not 0 < ratio < 1:
+            continue
+        for fam, ver in _RATIO_MODEL.findall(m.group(2)):
+            learned[f"{fam.lower()}-{ver.rstrip('.')}"] = ratio
+    CLAUDE_CACHE_RATIO_BY_FAMILY.update(learned)
+    return learned
+
+
 def expected_claude_cache_ratio(key: str) -> float:
-    low = key.lower()
-    for family, ratio in CLAUDE_CACHE_RATIO_BY_FAMILY.items():
-        if family in low:
+    low = key.lower().replace("-", ".")
+    # Longest family first, so "opus-5.5" is not shadowed by a shorter match.
+    for family, ratio in sorted(CLAUDE_CACHE_RATIO_BY_FAMILY.items(), key=lambda kv: -len(kv[0])):
+        if family.replace("-", ".") in low:
             return ratio
     return 0.10
 
@@ -281,6 +304,7 @@ VENDOR_SOURCES = [
         "openai",
         [
             # GM-corrected canonical URL (2026-08-28); platform path kept as secondary fallback
+            ("https://developers.openai.com/api/docs/pricing?latest-pricing=standard", {"Accept": "text/html"}),
             ("https://developers.openai.com/api/docs/pricing", {"Accept": "text/html"}),
             ("https://platform.openai.com/docs/pricing", {"Accept": "text/html"}),
         ],
@@ -356,6 +380,7 @@ def parse_anthropic_pricing(text: str) -> dict:
 
     try:
         page_unit = detect_unit_multiplier(text)
+        learn_claude_cache_ratios(text)
 
         # 1. Try Markdown table
         if "|" in text and "---" in text:
@@ -1115,6 +1140,15 @@ def resolve_price(
             "gemma4-aggressive:e4b", "gemma4-aggressive:e2b", "gemma2:2b", "gemma:2b"
         ):
             return (0.0, 0.0, 0.0, DOC)
+
+        # Claude Code writes "<synthetic>" for harness-generated turns that no
+        # API call produced; normalization turns it into "synthetic". Never billed.
+        if key == "synthetic":
+            return (0.0, 0.0, 0.0, DOC)
+
+        # "-thinking" is a mode label, not a SKU: price it as the base model.
+        if key.endswith("-thinking"):
+            key = key[: -len("-thinking")]
 
         exact = resolve_exact_price(
             key,
