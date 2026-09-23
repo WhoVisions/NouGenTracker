@@ -15,7 +15,7 @@
     "output_tokens": 36530,
     "reasoning": 0
   },
-  "generated_at": "2026-09-22T23:51:06-04:00",
+  "generated_at": "2026-09-23T03:48:58-04:00",
   "generated_by": "claude-cli",
   "invocations": 75,
   "machine": "blade1tb",
@@ -35,7 +35,7 @@
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
