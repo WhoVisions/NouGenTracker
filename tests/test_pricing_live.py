@@ -328,3 +328,27 @@ def test_mythos_tier_wrong_ratio_still_rejected():
     from pricing_live import validate_live_price
     ok, reason = validate_live_price("claude-fable-5.1", 10.0, 50.0, 1.0)  # 0.10 is wrong for fable-5.1
     assert not ok and "differs from 0.025" in reason
+
+
+def test_point_release_inherits_parent_rate_instead_of_default(monkeypatch):
+    """claude-fable-5-1 / claude-mythos-5-1 / claude-opus-5-5 fell all the way
+    to the $1/$4/$0.1 unknown-model default because no live/cached price
+    passed the invariant gates and the static table only has the base model
+    (claude-fable-5). Stripping a trailing numeric point-release segment,
+    same as the existing "high"/"preview" suffix stripping, recovers the
+    parent's real rate instead of a made-up number."""
+    monkeypatch.setattr(pricing_live, "_ATTEMPTED_VENDORS", {v for v, _ in pricing_live.VENDOR_SOURCES})
+    fallback = {"claude-fable-5": (10.00, 50.00, 1.000, "doc")}
+    inp, out, cache_read, src = pricing_live.resolve_price(
+        "claude-fable-5-1", fallback_pricing=fallback, default_pricing=(1.0, 4.0, 0.1, "default-unpriced"))
+    assert (inp, out, cache_read) == (10.00, 50.00, 1.000)
+    assert src == pricing_live.EST
+
+
+def test_unresolvable_point_release_still_falls_back_safely(monkeypatch):
+    """No parent entry anywhere -> still the safe default, not a crash or a guess."""
+    monkeypatch.setattr(pricing_live, "_ATTEMPTED_VENDORS", {v for v, _ in pricing_live.VENDOR_SOURCES})
+    inp, out, cache_read, src = pricing_live.resolve_price(
+        "totally-unknown-model-3", fallback_pricing={}, default_pricing=(1.0, 4.0, 0.1, "default-unpriced"))
+    assert (inp, out, cache_read, src) == (1.0, 4.0, 0.1, "default-unpriced")
+>>>>>>> 88d1d99 (fix(pricing): point-release models inherit their parent's rate, not $1/$4 default)

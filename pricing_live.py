@@ -1127,11 +1127,19 @@ def resolve_price(
             return exact
 
         # Family inference for variant suffixes (e.g. gemini-3.6-flash-high -> gemini-3.6-flash)
+        # and point releases (e.g. claude-fable-5-1 -> claude-fable-5): a static
+        # table entry for the parent model existed, but ".1"/"-1" never matched
+        # it, so claude-fable-5-1, claude-mythos-5-1 and claude-opus-5-5 fell
+        # all the way to the $1/$4/$0.1 unknown-model default instead of the
+        # parent's real rate. Point releases are Anthropic's own convention
+        # for "same tier, same price" unless a dated PRICE_SCHEDULE entry (hop
+        # 2, checked before this ever runs) says otherwise, so this is a safe
+        # last resort, not a guess at a new number.
         suffixes = variant_suffixes or (
             "high", "medium", "low", "minimal", "thinking", "latest", "preview", "customtools"
         )
         parts = key.split("-")
-        while len(parts) > 1 and parts[-1].lower() in suffixes:
+        while len(parts) > 1 and (parts[-1].lower() in suffixes or parts[-1].isdigit()):
             parts = parts[:-1]
             base_key = "-".join(parts)
             found = resolve_exact_price(
