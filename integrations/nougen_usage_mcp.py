@@ -44,6 +44,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone as dt_timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -52,10 +53,16 @@ try:
                               inspect_tracker)
 except ModuleNotFoundError:
     # In the repository this server lives one directory below tracker_live.py.
-    # Fleet installs place the two stdlib-only files beside each other.
+    # Fleet installs place the stdlib-only files beside each other.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from tracker_live import (DEFAULT_STALE_AFTER_DAYS, expected_machines,
                               inspect_tracker)
+
+try:
+    from tracker_query import tracker_query as query_tracker_dailies
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tracker_query import tracker_query as query_tracker_dailies
 
 SERVER_NAME = "nougen-usage"
 VERSION = "2.1.0"
@@ -432,6 +439,45 @@ def tool_live_status(
     return text, data
 
 
+def tool_tracker_query(
+        period: str = "YTD", scope: str = "fleet", as_of: Optional[str] = None,
+        timezone: str = "America/New_York", start: Optional[str] = None,
+        end: Optional[str] = None, machine: Optional[str] = None,
+        group_by: str = "machine", prove: bool = False
+        ) -> Tuple[str, Dict[str, Any]]:
+    """One-call window query; incomplete partitions return an observed floor."""
+    root = tracker_dir()
+    if root is None:
+        raise TrackerError("cannot find the tracker checkout for published dailies")
+    if scope not in {"fleet", "machine"}:
+        raise ValueError("scope must be fleet or machine")
+    if scope == "machine":
+        selected = machine or os.environ.get("NOUGEN_MACHINE", "").strip().lower()
+        if not selected:
+            raise ValueError("machine scope requires machine or NOUGEN_MACHINE")
+        machines = [selected]
+    else:
+        if machine:
+            raise ValueError("machine cannot be combined with fleet scope")
+        machines = expected_machines()
+    instant = as_of or datetime.now(dt_timezone.utc).isoformat()
+    data = query_tracker_dailies(
+        root, machines=machines, scope=scope, period=period, as_of=instant, timezone=timezone,
+        start=start, end=end, group_by=group_by, prove=prove,
+    )
+    if data["status"] == "complete":
+        text = (f"Complete {data['scope']} {data['period']} {data['metric']}: "
+                f"{data['total']:,} activity tokens across "
+                f"{data['coverage']['observed_machine_days']} machine-days.")
+    else:
+        text = (f"PARTIAL FLOOR only: {data['observed_total']:,} observed activity tokens; "
+                "authoritative total withheld because some machine-days are missing, "
+                "partial, or malformed. Missing is not zero.")
+    data.update({"as_of_state": "live", "tracker_dir": str(root),
+                 "metric_definition": "input+output+cache_creation+cache_read; reasoning excluded"})
+    return text, data
+
+
 ToolFn = Callable[..., Tuple[str, Dict[str, Any]]]
 
 _DAYS_SCHEMA = {"type": "object", "properties": {
@@ -445,6 +491,28 @@ _OUT = {"type": "object", "properties": {
     "disclaimers": {"type": "array", "items": {"type": "string"}}}}
 
 TOOLS: Dict[str, Dict[str, Any]] = {
+    "tracker_query": {
+        "fn": tool_tracker_query,
+        "title": "Coverage-aware tracker query",
+        "description": (
+            "One-call token usage query for YTD, MTD, latest day or an explicit "
+            "date range. Automatically reads every expected machine's published "
+            "daily records, computes integer activity totals, and returns an "
+            "observed floor with total=null when any machine-day is missing, "
+            "partial or malformed. Use for natural requests such as 'add up all "
+            "machine tokens YTD'; use prove=true to include SHA-256 provenance."),
+        "schema": {"type": "object", "properties": {
+            "period": {"type": "string", "enum": ["YTD", "MTD", "LATEST", "RANGE"]},
+            "scope": {"type": "string", "enum": ["fleet", "machine"]},
+            "as_of": {"type": "string", "description": "ISO date or timezone-aware datetime"},
+            "timezone": {"type": "string", "default": "America/New_York"},
+            "start": {"type": "string", "description": "Inclusive ISO date, required for RANGE"},
+            "end": {"type": "string", "description": "Inclusive ISO date, required for RANGE"},
+            "machine": {"type": "string", "description": "Required for machine scope; forbidden for fleet"},
+            "group_by": {"type": "string", "enum": ["machine", "model"]},
+            "prove": {"type": "boolean", "description": "Include source artifact IDs and SHA-256 hashes"},
+        }, "additionalProperties": False},
+    },
     "my_token_usage": {
         "fn": tool_my_usage,
         "title": "My token usage",
@@ -708,7 +776,7 @@ def selftest() -> int:
           all(d["inputSchema"] and d["outputSchema"]
               and d["annotations"]["readOnlyHint"] for d in descriptors))
     check("tool names are stable", sorted(TOOLS) == sorted([
-        "fleet_token_usage", "machine_token_usage", "my_token_usage",
+        "fleet_token_usage", "machine_token_usage", "my_token_usage", "tracker_query",
         "token_cost_by_model", "token_usage_provenance",
         "tracker_live_status"]))
     try:
