@@ -351,4 +351,3 @@ def test_unresolvable_point_release_still_falls_back_safely(monkeypatch):
     inp, out, cache_read, src = pricing_live.resolve_price(
         "totally-unknown-model-3", fallback_pricing={}, default_pricing=(1.0, 4.0, 0.1, "default-unpriced"))
     assert (inp, out, cache_read, src) == (1.0, 4.0, 0.1, "default-unpriced")
->>>>>>> 88d1d99 (fix(pricing): point-release models inherit their parent's rate, not $1/$4 default)
