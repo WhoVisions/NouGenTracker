@@ -9,22 +9,22 @@
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 4084167,
-    "cache_read": 474381297,
-    "input_tokens": 2356,
-    "output_tokens": 524540,
+    "cache_creation": 4085244,
+    "cache_read": 474519708,
+    "input_tokens": 2358,
+    "output_tokens": 525017,
     "reasoning": 0
   },
-  "generated_at": "2026-09-23T20:44:43-04:00",
+  "generated_at": "2026-09-24T00:46:38-04:00",
   "generated_by": "unknown-agent",
-  "invocations": 1193,
+  "invocations": 1194,
   "machine": "phoebus",
   "models": {
     "claude-opus-5": {
-      "cache_creation": 599135,
-      "cache_read": 24612565,
-      "input_tokens": 248,
-      "output_tokens": 77867,
+      "cache_creation": 600212,
+      "cache_read": 24750976,
+      "input_tokens": 250,
+      "output_tokens": 78344,
       "reasoning": 0
     },
     "claude-opus-5-5": {
@@ -49,7 +49,7 @@
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
@@ -127,18 +127,18 @@
       "reasoning": 0
     },
     "Claude Code": {
-      "cache_creation": 4084167,
-      "cache_read": 474381297,
-      "input_tokens": 2356,
-      "output_tokens": 524540,
+      "cache_creation": 4085244,
+      "cache_read": 474519708,
+      "input_tokens": 2358,
+      "output_tokens": 525017,
       "reasoning": 0
     }
   },
   "totals": {
-    "cache_creation": 4084167,
-    "cache_read": 474544771,
-    "input_tokens": 16659,
-    "output_tokens": 527138,
+    "cache_creation": 4085244,
+    "cache_read": 474683182,
+    "input_tokens": 16661,
+    "output_tokens": 527615,
     "reasoning": 0
   }
 }
