@@ -32,6 +32,13 @@ def expected_machines() -> List[str]:
     return sorted({value.strip().lower() for value in values if value.strip()})
 
 
+def expected_offline_machines() -> List[str]:
+    """Machines explicitly marked as expected offline / scheduled downtime."""
+    raw = os.environ.get("NOUGENTRACKER_EXPECTED_OFFLINE_MACHINES", "")
+    values = raw.split(",") if raw.strip() else ()
+    return sorted({value.strip().lower() for value in values if value.strip()})
+
+
 def _read_record(path: Path) -> Dict[str, Any]:
     """Read one bounded, non-symlink aggregate record."""
     if path.is_symlink():
@@ -47,16 +54,19 @@ def _read_record(path: Path) -> Dict[str, Any]:
 
 
 def _machine_status(root: Path, machine: str, today: date,
-                    stale_after_days: int) -> Dict[str, Any]:
+                    stale_after_days: int,
+                    expected_offline: bool = False) -> Dict[str, Any]:
     machine_dir = root / "dailies" / machine
     status: Dict[str, Any] = {
         "machine": machine,
-        "state": "missing",
+        "state": "expected_offline" if expected_offline else "missing",
         "latest_day": None,
         "age_days": None,
         "partial": None,
         "generated_at": None,
-        "detail": "no canonical daily record published",
+        "expected_offline": expected_offline,
+        "detail": "node is in expected offline/dormant state (context preserved)"
+                  if expected_offline else "no canonical daily record published",
     }
     if not machine_dir.is_dir() or machine_dir.is_symlink():
         return status
@@ -94,10 +104,16 @@ def _machine_status(root: Path, machine: str, today: date,
     elif partial:
         status.update(state="partial", detail="latest daily is explicitly partial")
     elif age > stale_after_days:
-        status.update(
-            state="stale",
-            detail=f"latest daily is {age} days old (limit {stale_after_days})",
-        )
+        if expected_offline:
+            status.update(
+                state="expected_offline",
+                detail=f"node in expected offline state; last daily is {age} days old (limit {stale_after_days})",
+            )
+        else:
+            status.update(
+                state="stale",
+                detail=f"latest daily is {age} days old (limit {stale_after_days})",
+            )
     else:
         status.update(state="fresh", detail="publication is within freshness limit")
     return status
@@ -105,7 +121,8 @@ def _machine_status(root: Path, machine: str, today: date,
 
 def inspect_tracker(root: Path, machines: Optional[Iterable[str]] = None,
                     stale_after_days: int = DEFAULT_STALE_AFTER_DAYS,
-                    today: Optional[date] = None) -> Dict[str, Any]:
+                    today: Optional[date] = None,
+                    offline_machines: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     """Return publication health without starting the usage collection plane."""
     if stale_after_days < 0:
         raise ValueError("stale_after_days must be non-negative")
@@ -116,19 +133,41 @@ def inspect_tracker(root: Path, machines: Optional[Iterable[str]] = None,
     invalid = [name for name in names if not _MACHINE.fullmatch(name)]
     if invalid:
         raise ValueError(f"invalid machine name(s): {', '.join(invalid)}")
+    
+    expected_offline_set = {
+        name.strip().lower() for name in
+        (offline_machines if offline_machines is not None else expected_offline_machines())
+        if name.strip()
+    }
+
     check_day = today or datetime.now(timezone.utc).date()
-    statuses = [_machine_status(root, name, check_day, stale_after_days)
+    statuses = [_machine_status(root, name, check_day, stale_after_days, expected_offline=(name in expected_offline_set))
                 for name in names]
     incomplete = [item["machine"] for item in statuses
-                  if item["state"] != "fresh"]
+                  if item["state"] not in ("fresh", "expected_offline")]
+
+    # Invariant per relay 20260926T162434Z: current-day buckets can never be finalized complete before local midnight
+    now_utc = datetime.now(timezone.utc)
+    current_utc_day = now_utc.date().isoformat()
+    period_closed = bool(check_day.isoformat() < current_utc_day)
+    final_complete = bool((not incomplete) and period_closed)
+
     return {
         "mode": "passive_metadata_only",
         "scope": "publication_freshness_not_usage",
-        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "checked_at": now_utc.isoformat(),
         "checked_day": check_day.isoformat(),
+        "period_closed": period_closed,
+        "aggregation_complete": not incomplete,
+        "source_complete": len(incomplete) == 0,
+        "measurement_basis": "exact_or_metered",
+        "as_of": now_utc.isoformat(),
+        "timezone": "UTC",
+        "period_start": f"{check_day.isoformat()}T00:00:00Z",
+        "period_end": f"{check_day.isoformat()}T23:59:59Z",
         "tracker_dir": str(root),
         "stale_after_days": stale_after_days,
-        "complete": not incomplete,
+        "complete": final_complete,
         "incomplete_machines": incomplete,
         "machines": statuses,
         "side_effects": {
@@ -140,30 +179,45 @@ def inspect_tracker(root: Path, machines: Optional[Iterable[str]] = None,
         "caveat": (
             "This reports only whether expected machines recently published "
             "aggregate dailies. It does not measure current token usage, and a "
-            "missing or stale machine must never be interpreted as zero usage."
+            "missing or stale machine must never be interpreted as zero usage. "
+            "Current-day buckets remain period_closed=false until UTC/local midnight. "
+            "Expected-offline nodes preserve state without triggering alarms."
         ),
     }
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    default_repo = os.environ.get("NOUGENTRACKER_DIR")
+    if not default_repo or not Path(default_repo).exists():
+        candidates = [
+            Path.home() / "Watchtower" / "NouGen" / "NouGenTracker",
+            Path.home() / "Outpost" / "NouGenTracker",
+            Path.home() / ".nougen" / "nougentracker-live-safe",
+            Path.home() / ".nougen" / "tracker",
+            Path(__file__).resolve().parent,
+        ]
+        default_repo = str(next((c for c in candidates if (c / ".git").exists()), Path(__file__).resolve().parent))
+
     parser.add_argument("--repo", type=Path,
-                        default=Path(__file__).resolve().parent,
+                        default=Path(default_repo),
                         help="NouGenTracker checkout to inspect")
     parser.add_argument("--machine", action="append", dest="machines",
                         help="expected machine (repeatable; defaults to fleet config)")
+    parser.add_argument("--expected-offline", action="append", dest="offline_machines",
+                        help="expected offline machine (repeatable; defaults to fleet config)")
     parser.add_argument("--stale-after-days", type=int,
                         default=DEFAULT_STALE_AFTER_DAYS)
     parser.add_argument("--json", action="store_true",
                         help="emit the structured result")
     args = parser.parse_args(argv)
-    result = inspect_tracker(args.repo, args.machines, args.stale_after_days)
+    result = inspect_tracker(args.repo, args.machines, args.stale_after_days, offline_machines=args.offline_machines)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
         print("NouGenTracker passive publication status")
         for item in result["machines"]:
-            print(f"  {item['machine']:<12} {item['state']:<8} "
+            print(f"  {item['machine']:<12} {item['state']:<16} "
                   f"{item['latest_day'] or '-'}  {item['detail']}")
         print("No raw logs read; no files written; no network; no tracker scan.")
     return 0

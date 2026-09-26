@@ -98,3 +98,23 @@ def test_missing_is_unknown_not_zero(tmp_path):
 def test_machine_name_cannot_escape_dailies_root(tmp_path):
     with pytest.raises(ValueError, match="invalid machine"):
         tracker_live.inspect_tracker(tmp_path, ["../../private"])
+
+
+def test_expected_offline_preserves_context_without_false_alarm(tmp_path):
+    _daily(tmp_path, "freshbox", "2026-09-03")
+    _daily(tmp_path, "whoart", "2026-08-20")
+
+    result = tracker_live.inspect_tracker(
+        tmp_path, ["freshbox", "whoart", "dormantbox"],
+        stale_after_days=2, today=date(2026, 9, 4),
+        offline_machines=["whoart", "dormantbox"]
+    )
+
+    states = {item["machine"]: item["state"] for item in result["machines"]}
+    assert states["freshbox"] == "fresh"
+    assert states["whoart"] == "expected_offline"
+    assert states["dormantbox"] == "expected_offline"
+    assert result["aggregation_complete"] is True
+    assert "whoart" not in result["incomplete_machines"]
+    assert "dormantbox" not in result["incomplete_machines"]
+
