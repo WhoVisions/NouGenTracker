@@ -29,6 +29,9 @@ class TrackerFlags(TypedDict):
     missing_expected_nodes: bool
     missing_expected_dates: bool
     provenance_incomplete: bool
+    period_closed: bool
+    aggregation_complete: bool
+    source_complete: bool
     retryable: bool
     recoverable: bool
     failover_available: bool
@@ -342,10 +345,17 @@ def tracker_query(
             "provenance": machine_provenance if prove else None,
         })
 
-    complete = not missing_by_machine and not partial_by_machine and not malformed
-    total = metric_total if complete else None
+    current_tz_date = datetime.now(tz).date()
+    period_closed = bool(hi < current_tz_date)
+    aggregation_complete = bool(not missing_by_machine and not partial_by_machine and not malformed)
     deferred_machines = [row["machine"] for row in machine_rows if row["state"] == "DEFERRED"]
+    source_complete = bool(not missing_by_machine and not deferred_machines)
+    complete = bool(period_closed and aggregation_complete and source_complete)
+    total = metric_total if complete else None
     reason_codes = []
+    if not period_closed:
+        reason_codes.append("period.current_day_open")
+        reason_codes.append("TEMPORAL_WINDOW_OPEN")
     if missing_by_machine:
         reason_codes.append("coverage.missing_machine_days")
         reason_codes.append("EXPECTED_DATE_MISSING")
@@ -362,13 +372,18 @@ def tracker_query(
         reason_codes.append("RETRIEVAL_CONFIDENCE_LOW")
     has_observations = bool(source_hashes)
     has_files = has_observations or bool(malformed)
-    retryable = bool(deferred_machines or missing_by_machine or partial_by_machine)
+    retryable = bool(deferred_machines or missing_by_machine or partial_by_machine or not period_closed)
+    measurement_basis = (
+        "estimated" if estimated_total and not exact_total else (
+            "mixed" if estimated_total and exact_total else "exact"
+        )
+    )
     state: TrackerState = {
         "status": "SUCCESS" if complete else "DEGRADED",
         "observation": "PARSED" if has_observations else ("FETCHED" if malformed else "DEFERRED"),
         "completeness": "COMPLETE" if complete else "PARTIAL",
         "conflict": "UNKNOWN",
-        "freshness": "UNKNOWN",
+        "freshness": "LIVE" if not period_closed else "CURRENT",
         "retrieval": "HIT" if any(row["observed_days"] for row in machine_rows) else "NO_HIT",
         "pagination": "NOT_APPLICABLE",
         "availability": "AVAILABLE",
@@ -389,11 +404,14 @@ def tracker_query(
             )
         ),
         "execution": "COMPLETE",
-        "anomaly": "GAP" if retryable else "NORMAL",
+        "anomaly": "GAP" if (deferred_machines or missing_by_machine or partial_by_machine) else "NORMAL",
         "confidence": "HIGH" if complete else ("MEDIUM" if has_observations else "INSUFFICIENT"),
         "flags": {
             "observed": has_files,
             "complete": complete,
+            "period_closed": period_closed,
+            "aggregation_complete": aggregation_complete,
+            "source_complete": source_complete,
             "canonical": None,
             "current": None,
             "exact": has_observations and not bool(estimated_total) and not malformed,
@@ -436,6 +454,14 @@ def tracker_query(
     state["recovery"] = _recovery(state)
     result = {
         "status": "complete" if complete else "partial",
+        "period_closed": period_closed,
+        "aggregation_complete": aggregation_complete,
+        "source_complete": source_complete,
+        "measurement_basis": measurement_basis,
+        "as_of": as_of,
+        "timezone": timezone,
+        "period_start": lo.isoformat(),
+        "period_end": hi.isoformat(),
         "scope": scope,
         "period": period,
         "window": {"start": lo.isoformat(), "end": hi.isoformat(), "timezone": timezone},
@@ -444,7 +470,7 @@ def tracker_query(
         "observed_total": metric_total,
         "floor": not complete,
         "quality_activity": {"exact": exact_total, "estimated": estimated_total},
-        "token_basis": "estimated" if estimated_total and not exact_total else ("mixed" if estimated_total and exact_total else "exact"),
+        "token_basis": measurement_basis,
         "source_partial": bool(partial_by_machine or missing_by_machine or (not complete and metric_total > 0)),
         "expected_machines": expected,
         "machines": machine_rows,
@@ -457,6 +483,5 @@ def tracker_query(
         "groups": [{"key": key, "activity": value}
                    for key, value in sorted(group_totals.items())] if group_by == "model" else [],
         "provenance": {"source_hashes": dict(sorted(source_hashes.items()))} if prove else None,
-
     }
     return result
