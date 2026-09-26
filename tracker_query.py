@@ -213,6 +213,21 @@ def _read_daily(path: Path, machine: str, day: str) -> dict[str, Any]:
     return {"record": record, "sha256": hashlib.sha256(raw).hexdigest()}
 
 
+def _provider_for_model(model: str) -> str:
+    m = model.lower()
+    if any(k in m for k in ("claude", "anthropic")):
+        return "anthropic"
+    if any(k in m for k in ("gpt-", "o1-", "o3-", "text-embedding", "openai", "chatgpt", "codex")):
+        return "openai"
+    if any(k in m for k in ("gemini", "google")):
+        return "google"
+    if any(k in m for k in ("deepseek",)):
+        return "deepseek"
+    if any(k in m for k in ("solai", "yukiai", "gemma", "ollama", "qwen", "llama", "mistral", "phi")):
+        return "ollama"
+    return "other"
+
+
 def tracker_query(
     root: str | Path,
     *,
@@ -256,8 +271,8 @@ def tracker_query(
         raise ValueError("scope must be fleet or machine")
     if not expected:
         raise ValueError("machines must not be empty")
-    if group_by not in {"machine", "model"}:
-        raise ValueError("group_by must be machine or model")
+    if group_by not in {"machine", "model", "provider"}:
+        raise ValueError("group_by must be machine, model, or provider")
 
     machine_rows = []
     missing_by_machine: dict[str, dict[str, Any]] = {}
@@ -302,15 +317,18 @@ def tracker_query(
                     exact_activity += activity
                 else:
                     estimated_activity += activity
-                if group_by == "model":
+                if group_by in {"model", "provider"}:
                     for name, stats in sorted(record.get("models", {}).items()):
                         if quality == "estimated" and "estimated" not in name.casefold():
                             continue
                         if quality == "exact" and "estimated" in name.casefold():
                             continue
-                        group_totals[name] = group_totals.get(name, 0) + sum(
-                            stats.get(field, 0) for field in TOKEN_FIELDS
-                        )
+                        activity_sum = sum(stats.get(field, 0) for field in TOKEN_FIELDS)
+                        if group_by == "model":
+                            group_key = name
+                        else:
+                            group_key = _provider_for_model(name)
+                        group_totals[group_key] = group_totals.get(group_key, 0) + activity_sum
                 for field in TOKEN_FIELDS:
                     total[field] += values.get(field, 0)
             metric_total += sum(record.get(bucket, {}).get(field, 0)
@@ -481,7 +499,7 @@ def tracker_query(
         "state": state,
         "group_by": group_by,
         "groups": [{"key": key, "activity": value}
-                   for key, value in sorted(group_totals.items())] if group_by == "model" else [],
+                   for key, value in sorted(group_totals.items())] if group_by in {"model", "provider"} else [],
         "provenance": {"source_hashes": dict(sorted(source_hashes.items()))} if prove else None,
     }
     return result
