@@ -444,6 +444,8 @@ def tracker_query(
         "observed_total": metric_total,
         "floor": not complete,
         "quality_activity": {"exact": exact_total, "estimated": estimated_total},
+        "token_basis": "estimated" if estimated_total and not exact_total else ("mixed" if estimated_total and exact_total else "exact"),
+        "source_partial": bool(partial_by_machine or missing_by_machine or (not complete and metric_total > 0)),
         "expected_machines": expected,
         "machines": machine_rows,
         "missing_by_machine": missing_by_machine,
@@ -455,5 +457,6 @@ def tracker_query(
         "groups": [{"key": key, "activity": value}
                    for key, value in sorted(group_totals.items())] if group_by == "model" else [],
         "provenance": {"source_hashes": dict(sorted(source_hashes.items()))} if prove else None,
+
     }
     return result
