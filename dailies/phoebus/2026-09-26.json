@@ -3,9 +3,9 @@
   "date": "2026-09-26",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 1375190131,
-    "input_tokens": 930031,
-    "output_tokens": 308779,
+    "cache_read": 1401877248,
+    "input_tokens": 939796,
+    "output_tokens": 313346,
     "reasoning": 0
   },
   "exact": {
@@ -15,9 +15,9 @@
     "output_tokens": 23968,
     "reasoning": 10233
   },
-  "generated_at": "2026-09-26T23:14:00-04:00",
+  "generated_at": "2026-09-27T03:19:58-04:00",
   "generated_by": "unknown-agent",
-  "invocations": 2603,
+  "invocations": 2626,
   "machine": "phoebus",
   "models": {
     "claude-opus-4-6-thinking (estimated)": {
@@ -29,9 +29,9 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 1339037430,
-      "input_tokens": 915146,
-      "output_tokens": 302780,
+      "cache_read": 1365724547,
+      "input_tokens": 924911,
+      "output_tokens": 307347,
       "reasoning": 0
     },
     "gpt-5.6-luna": {
@@ -56,7 +56,7 @@
       "reasoning": 8534
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.9587,
@@ -153,9 +153,9 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 1375190131,
-      "input_tokens": 930031,
-      "output_tokens": 308779,
+      "cache_read": 1401877248,
+      "input_tokens": 939796,
+      "output_tokens": 313346,
       "reasoning": 0
     },
     "OpenAI Codex": {
@@ -168,9 +168,9 @@
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 1395556467,
-    "input_tokens": 1807866,
-    "output_tokens": 332747,
+    "cache_read": 1422243584,
+    "input_tokens": 1817631,
+    "output_tokens": 337314,
     "reasoning": 10233
   }
 }
