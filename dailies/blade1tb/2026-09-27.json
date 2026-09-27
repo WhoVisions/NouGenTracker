@@ -1,0 +1,83 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-27",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 193024,
+    "input_tokens": 33039,
+    "output_tokens": 588,
+    "reasoning": 257
+  },
+  "generated_at": "2026-09-27T03:58:39-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 6,
+  "machine": "blade1tb",
+  "models": {
+    "gpt-5.6-luna": {
+      "cache_creation": 0,
+      "cache_read": 193024,
+      "input_tokens": 33039,
+      "output_tokens": 588,
+      "reasoning": 257
+    }
+  },
+  "partial": true,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.8539,
+      "distinct_sessions": 1,
+      "peak_context_used_percent": 15.82,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 4.0,
+          "peak_used_percent": 4.0,
+          "resets_at": 1790508556,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 24.0,
+          "peak_used_percent": 24.0,
+          "resets_at": 1791048982,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 226908,
+      "uncached_input_tokens": 33039
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "088fa8a6183a3bbc",
+    "3c3c30c656a3d6a7",
+    "3cc50a1dace8faa3",
+    "98a8acfd1540dc95",
+    "d2846235bf433991",
+    "f8f7aeab33e5fb15"
+  ],
+  "sources": {
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 193024,
+      "input_tokens": 33039,
+      "output_tokens": 588,
+      "reasoning": 257
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 193024,
+    "input_tokens": 33039,
+    "output_tokens": 588,
+    "reasoning": 257
+  }
+}
