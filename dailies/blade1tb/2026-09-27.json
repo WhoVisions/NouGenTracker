@@ -15,7 +15,7 @@
     "output_tokens": 76748,
     "reasoning": 66629
   },
-  "generated_at": "2026-09-27T23:59:21-04:00",
+  "generated_at": "2026-09-28T03:51:24-04:00",
   "generated_by": "claude-cli",
   "invocations": 397,
   "machine": "blade1tb",
@@ -49,7 +49,7 @@
       "reasoning": 66372
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.9656,
