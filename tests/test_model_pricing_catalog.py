@@ -173,3 +173,19 @@ def test_cli_bad_date_reports_an_error_without_a_traceback(monkeypatch, capsys, 
     assert "error:" in captured.err
     assert "Traceback" not in captured.err
     assert captured.out == ""
+
+
+@pytest.mark.parametrize("day,input_rate,storage_rate", [
+    ("2026-12-31", .75, .5),
+    ("2027-01-01", 1.5, 1.0),
+])
+def test_cli_valid_date_emits_only_the_requested_model(monkeypatch, capsys, day, input_rate, storage_rate):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--model", "gemini-3.8-flash", "--date", day])
+    catalog.main()
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert captured.err == ""
+    assert result["model"] == "gemini-3.8-flash"
+    assert result["rates"]["text"]["input"] == input_rate
+    assert result["metered"]["cache_million_token_hours"] == storage_rate
+    assert "models" not in result
