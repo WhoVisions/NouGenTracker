@@ -111,7 +111,7 @@ def main():
     parser.add_argument("--model", help="exact model ID or published snapshot alias")
     parser.add_argument("--date", help="ISO date for a published pricing transition")
     args = parser.parse_args()
-    if args.date and not args.model:
+    if args.date is not None and not args.model:
         parser.error("--date requires --model")
     try:
         result = lookup_model(args.model, args.date) if args.model else load_catalog()

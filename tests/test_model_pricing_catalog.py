@@ -139,3 +139,14 @@ def test_pricing_date_objects_select_the_same_boundary():
     import datetime
     for day in (datetime.date(2027, 1, 1), datetime.datetime(2027, 1, 1, 12)):
         assert catalog.lookup_model("gemini-3.8-flash", day)["rates"]["text"]["input"] == 1.5
+
+
+@pytest.mark.parametrize("date_arg", ["2027-01-01", ""])
+def test_cli_requires_a_model_even_for_an_empty_date(monkeypatch, capsys, date_arg):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--date", date_arg])
+    with pytest.raises(SystemExit) as exc:
+        catalog.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "--date requires --model" in captured.err
+    assert captured.out == ""
