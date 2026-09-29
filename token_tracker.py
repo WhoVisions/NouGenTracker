@@ -391,6 +391,11 @@ MODEL_PRICING = {
     "gemini-3.1-flash-lite":          (0.25, 1.50, 0.025, DOC),
     "gemini-3.1-flash-lite-preview":  (0.25, 1.50, 0.025, DOC),
     # ---- OpenAI: first-party list prices (cached input -> cache_read) ----
+    # Standard API-equivalent rates verified 2026-09-29:
+    # https://developers.openai.com/api/docs/models/gpt-6.1-sol
+    # Request-level long-context/service-tier premiums are not inferred from
+    # daily token aggregates; see README's Sol 6.1 pricing scope.
+    "gpt-6.1-sol":                (2.00, 10.00, 0.10, DOC),
     "gpt-5.6-sol-ultra":          (5.00, 30.00, 0.50, DOC),
     "gpt-5.6-sol":                (5.00, 30.00, 0.50, DOC),
     "gpt-5.6-terra":              (2.00, 12.00, 0.200, DOC),
@@ -499,7 +504,7 @@ def price_for(model_name, when=None):
 _VARIANT_SUFFIXES = tuple(
     s.strip().lower() for s in os.environ.get(
         "MODEL_VARIANT_SUFFIXES",
-        "high,medium,low,minimal,thinking,latest,preview,customtools").split(",")
+        "high,xhigh,max,ultra,medium,low,minimal,thinking,latest,preview,customtools").split(",")
     if s.strip())
 
 

@@ -46,6 +46,22 @@ TOKEN_TRACKER_CUTOFF="2026-06-29T06:00:00-04:00" python token_tracker.py --by-pr
   input), so the number is honest rather than inflated.
 - Cache-health, model-class, and "cold context leak" route hints.
 
+### Sol 6.1 pricing scope
+
+Verified against [OpenAI's GPT-6.1 Sol model page](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+on September 29, 2026: Standard rates per million tokens are **$2 input,
+$0.10 cached input, $2.50 cache writes, and $10 output**. The exact
+`gpt-6.1-sol` model has a documented fallback when live pricing is unavailable.
+Reasoning effort suffixes, including `xhigh`, `max`, and the Codex app's `ultra`
+label, resolve to the base model with inferred-price provenance.
+
+These are API-equivalent Standard estimates. OpenAI specifies full-request
+premiums above 272,000 input tokens (2x input/cache and 1.5x output), Fast at
+2x Standard, Batch/Flex at half Standard, and regional processing at a 10%
+premium where available. Daily totals cannot identify those request boundaries
+or service tiers, so this tracker does not apply those multipliers to aggregated
+tokens. This table does not establish ChatGPT/Codex subscription credit limits.
+
 ## Forward tracking for local/free lanes (`fleet/`)
 
 Local Ollama/Gemma calls and OpenRouter/HF requests don't persist token counts anywhere,

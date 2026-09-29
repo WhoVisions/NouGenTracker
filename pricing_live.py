@@ -1170,7 +1170,7 @@ def resolve_price(
         # 2, checked before this ever runs) says otherwise, so this is a safe
         # last resort, not a guess at a new number.
         suffixes = variant_suffixes or (
-            "high", "medium", "low", "minimal", "thinking", "latest", "preview", "customtools"
+            "high", "xhigh", "max", "ultra", "medium", "low", "minimal", "thinking", "latest", "preview", "customtools"
         )
         parts = key.split("-")
         while len(parts) > 1 and (parts[-1].lower() in suffixes or parts[-1].isdigit()):
