@@ -1,6 +1,8 @@
 """Offline catalog coverage and official pricing regressions, 2026-09-29."""
 import json
 import math
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -189,3 +191,23 @@ def test_cli_valid_date_emits_only_the_requested_model(monkeypatch, capsys, day,
     assert result["rates"]["text"]["input"] == input_rate
     assert result["metered"]["cache_million_token_hours"] == storage_rate
     assert "models" not in result
+
+
+@pytest.mark.parametrize("date_arg,expected_status", [("2027-01-01", 0), ("2027-02-30", 2)])
+def test_standalone_cli_from_another_directory(tmp_path, date_arg, expected_status):
+    result = subprocess.run(
+        [sys.executable, str(Path(catalog.__file__).resolve()),
+         "--model", "gemini-3.8-flash", "--date", date_arg],
+        cwd=tmp_path, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == expected_status
+    if expected_status == 0:
+        record = json.loads(result.stdout)
+        assert record["rates"]["text"]["input"] == 1.5
+        assert record["metered"]["cache_million_token_hours"] == 1.0
+        assert result.stderr == ""
+    else:
+        assert result.stdout == ""
+        assert "error:" in result.stderr
+        assert "Traceback" not in result.stderr
+    assert not list(tmp_path.iterdir())  # The CLI must not write in the caller's directory.
