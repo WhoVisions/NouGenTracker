@@ -34,7 +34,18 @@ def lookup_model(model, when=None, *, _catalog=None):
     record["model"] = alias["model"] if alias else key
     record["requested_model"] = key
     record["price_source"] = alias["source"] if alias else record.get("price_source", "doc")
-    day = (when.isoformat()[:10] if hasattr(when, "isoformat") else str(when)[:10]) if when else datetime.date.today().isoformat()
+    if when is None:
+        day = datetime.date.today().isoformat()
+    elif isinstance(when, datetime.datetime):
+        day = when.date().isoformat()
+    elif isinstance(when, datetime.date):
+        day = when.isoformat()
+    elif isinstance(when, str):
+        if len(when) != 10:
+            raise ValueError("pricing date must be YYYY-MM-DD")
+        day = datetime.date.fromisoformat(when).isoformat()
+    else:
+        raise ValueError("pricing date must be a date or YYYY-MM-DD")
     for step in sorted(record.get("scheduled_rates", []), key=lambda s: s["starts_on"]):
         if day >= step["starts_on"]:
             record["rates"] = copy.deepcopy(step["rates"])
@@ -100,7 +111,12 @@ def main():
     parser.add_argument("--model", help="exact model ID or published snapshot alias")
     parser.add_argument("--date", help="ISO date for a published pricing transition")
     args = parser.parse_args()
-    result = lookup_model(args.model, args.date) if args.model else load_catalog()
+    if args.date and not args.model:
+        parser.error("--date requires --model")
+    try:
+        result = lookup_model(args.model, args.date) if args.model else load_catalog()
+    except ValueError as exc:
+        parser.error(str(exc))
     if result is None:
         parser.error("model is not in the verified catalog")
     print(json.dumps(result, indent=2))
