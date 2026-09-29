@@ -1,0 +1,162 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-09-29",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 103634469,
+    "input_tokens": 202390,
+    "output_tokens": 82873,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 19799936,
+    "input_tokens": 663418,
+    "output_tokens": 42014,
+    "reasoning": 70328
+  },
+  "generated_at": "2026-09-29T01:33:23-04:00",
+  "generated_by": "unknown-agent",
+  "invocations": 675,
+  "machine": "phoebus",
+  "models": {
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 103634469,
+      "input_tokens": 202390,
+      "output_tokens": 82873,
+      "reasoning": 0
+    },
+    "gpt-6-astra": {
+      "cache_creation": 0,
+      "cache_read": 829568,
+      "input_tokens": 49381,
+      "output_tokens": 5192,
+      "reasoning": 191
+    },
+    "gpt-6-luna": {
+      "cache_creation": 0,
+      "cache_read": 18970368,
+      "input_tokens": 614037,
+      "output_tokens": 36822,
+      "reasoning": 70137
+    }
+  },
+  "partial": true,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9676,
+      "distinct_sessions": 2,
+      "peak_context_used_percent": 89.35,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 21.0,
+          "peak_used_percent": 21.0,
+          "resets_at": 1790671850,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 67.0,
+          "peak_used_percent": 67.0,
+          "resets_at": 1791048982,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 20614683,
+      "uncached_input_tokens": 663418
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "0072e960ae8a1f07",
+    "00759f0910710a49",
+    "00e163572e0b64ab",
+    "016b46fb23704de0",
+    "01a041e64b582d9c",
+    "01b7a8c802a444a5",
+    "0205f6fe75f5710d",
+    "02f9beb8855aa2ec",
+    "0314b89c576238ed",
+    "03376c60d73bebb6",
+    "034d252e66cfac2b",
+    "035a86c83058736f",
+    "03ff10e872b89356",
+    "045eba6c4364ffa6",
+    "0464df0410b72fb4",
+    "04f2a66016c8521a",
+    "05413d86891cbc4e",
+    "055b46216e8009e3",
+    "05860648ab003efa",
+    "05b7e13aadc1b372",
+    "05da6b8811008955",
+    "06280f3fa588f21b",
+    "063de6ed5692e22c",
+    "06e41cf00b4bed3e",
+    "06e460e77ff47ba2",
+    "07ea03485841fe8b",
+    "083e6244d1f1652b",
+    "0884cd764a656e2a",
+    "0951a80ec4f076fa",
+    "0a2183e70daa3b86",
+    "0a58aa65182797ae",
+    "0a8987fa52f42c09",
+    "0b3ecc09ed6a8c85",
+    "0b7448a3ad21342e",
+    "0b85a9eb5ba49f0a",
+    "0d295ff0e798f3f5",
+    "0d6175c5ea904271",
+    "0dd271290db27429",
+    "0e44537eff8b87f8",
+    "0ef7c7c1cc2faf09",
+    "0fba585aae774531",
+    "0fd2f387e55c0e56",
+    "100f350c8b035e3f",
+    "10abd25bea02eab8",
+    "11f308bee9914a5d",
+    "13058d6d4d987817",
+    "13f6eb537323f2e3",
+    "14f91a7692bcd1a9",
+    "163b211476eb1dce",
+    "165d6c32d037fb5a",
+    "16d5053087008262",
+    "184668b115425acf",
+    "185413bd67d9a652",
+    "18ac35484105b360",
+    "18ff54c010cacfad",
+    "1922e7bad4ed4e43",
+    "194d1cc187b33041",
+    "19606579a1901fe1",
+    "19e907a85f63f416",
+    "19f19f3576bd6389",
+    "1a2b341ad3f42c36",
+    "1a787f6f117e4dd0",
+    "1a78ca806d717111",
+    "1a873268bb21424f"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 103634469,
+      "input_tokens": 202390,
+      "output_tokens": 82873,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 19799936,
+      "input_tokens": 663418,
+      "output_tokens": 42014,
+      "reasoning": 70328
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 123434405,
+    "input_tokens": 865808,
+    "output_tokens": 124887,
+    "reasoning": 70328
+  }
+}
