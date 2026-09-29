@@ -55,8 +55,8 @@ def test_mixed_token_bucket_prices_each_bucket_once():
     assert source == pricing_live.FALLBACK_CONST
 
 
-def test_new_model_does_not_reprice_previous_sol():
-    assert tracker.price_for("gpt-5.6-sol", "2026-09-29")[:3] == (5.0, 30.0, 0.5)
+def test_previous_sol_uses_its_own_current_published_rate():
+    assert tracker.price_for("gpt-5.6-sol", "2026-09-29")[:3] == (4.0, 20.0, 0.4)
 
 
 def test_live_table_parser_preserves_five_percent_cache_rate():

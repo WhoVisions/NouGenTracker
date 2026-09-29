@@ -19,6 +19,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import pricing_live
+import pricing_catalog
 from pricing_live import calculate_cost, round_to_cents
 
 
@@ -340,13 +341,12 @@ MODEL_PRICING = {
     "claude-haiku-3-5":           (0.80, 4.00, 0.080, DOC),
     # Opus 5 and Sonnet 5 were missing entirely, so 255M opus-5 tokens — the
     # second-largest model on this fleet — were billing at the $1/$4 unknown-model
-    # default. Cache read is 0.1x base input on every Claude model.
+    # default. Newer families have their own documented cache ratios.
     "claude-opus-5":              (5.00, 25.00, 0.500, DOC),
     "claude-opus-5-thinking":     (5.00, 25.00, 0.500, DOC),
-    # Sonnet 5 is dated — see PRICE_SCHEDULE. These are the post-intro rates and
-    # the fallback when a caller supplies no date.
-    "claude-sonnet-5":            (3.00, 15.00, 0.300, DOC),
-    "claude-sonnet-5-thinking":   (3.00, 15.00, 0.300, DOC),
+    # The planned September increase was canceled by Anthropic.
+    "claude-sonnet-5":            (2.00, 10.00, 0.200, DOC),
+    "claude-sonnet-5-thinking":   (2.00, 10.00, 0.200, DOC),
     "claude-opus-4-8":            (5.00, 25.00, 0.500, DOC),
     "claude-opus-4-7":            (5.00, 25.00, 0.500, DOC),
     "claude-opus-4-6":            (5.00, 25.00, 0.500, DOC),
@@ -396,22 +396,22 @@ MODEL_PRICING = {
     # Request-level long-context/service-tier premiums are not inferred from
     # daily token aggregates; see README's Sol 6.1 pricing scope.
     "gpt-6.1-sol":                (2.00, 10.00, 0.10, DOC),
-    "gpt-5.6-sol-ultra":          (5.00, 30.00, 0.50, DOC),
-    "gpt-5.6-sol":                (5.00, 30.00, 0.50, DOC),
+    "gpt-5.6-sol-ultra":          (4.00, 20.00, 0.40, EST),
+    "gpt-5.6-sol":                (4.00, 20.00, 0.40, DOC),
     "gpt-5.6-terra":              (2.00, 12.00, 0.200, DOC),
     "gpt-5.6-luna":               (0.20, 1.20, 0.020, DOC),
     "gpt-5.5":                    (5.00, 30.00, 0.50, DOC),
     "gpt-5.4":                    (2.50, 15.00, 0.25, DOC),
     "gpt-5.4-mini":               (0.75, 4.50, 0.075, DOC),
     "gpt-5-codex-mini":           (0.75, 4.50, 0.075, EST),
-    "gpt-5.1-codex-mini":         (0.75, 4.50, 0.075, EST),
+    "gpt-5.1-codex-mini":         (0.25, 2.00, 0.025, DOC),
     # gpt-oss is open-weights; Dave runs it free via OpenRouter/local. Nominal host est.
     "gpt-oss-120b-medium":        (0.10, 0.40, 0.010, EST),
     # --- audited against the official pricing pages, 2026-08-01 -------------
     # Absent rows are not neutral: they fall through to DEFAULT_PRICING at
     # $1/$4, so a missing premium model reads as an order of magnitude cheaper
     # than it is. gpt-5.5-pro and gpt-5.4-pro at $30/$180 were a 30x undercount.
-    "gemini-3.6-flash":           (1.50, 7.50, 0.150, DOC),
+    "gemini-3.6-flash":           (0.75, 3.75, 0.075, DOC),
     "gemini-3.5-flash-lite":      (0.30, 2.50, 0.030, DOC),
     "gemini-2.5-flash-lite":      (0.10, 0.40, 0.010, DOC),
     "gemini-embedding-001":       (0.15, 0.00, 0.000, DOC),
@@ -422,6 +422,10 @@ MODEL_PRICING = {
     "gpt-5.3-codex":              (1.75, 14.00, 0.175, DOC),
     "chat-latest":                (5.00, 30.00, 0.500, DOC),
 }
+# Sourced catalog supersedes older constants and adds every published model.
+# Non-text modalities retain their own units in pricing_catalog, not this bill.
+MODEL_PRICING.update(pricing_catalog.text_prices())
+MODEL_PRICING["gpt-5.6-sol-ultra"] = (*MODEL_PRICING["gpt-5.6-sol"][:3], EST)
 # Unknown model: conservative estimate so the bill never silently reads $0.
 DEFAULT_PRICING = (1.00, 4.00, 0.100, EST)
 
@@ -442,19 +446,19 @@ FREE_LOCAL_MODELS = {
 # model. A single number per model cannot express that, so it is wrong on one
 # side of the boundary no matter which value you pick.
 #
-# Sonnet 5 is the live case. Introductory pricing of $2/$10 runs through
-# 2026-08-31; $3/$15 applies from 2026-09-01. Billing August at list overstates
-# it by 50%, and billing September at intro understates it by a third.
+# Anthropic canceled Sonnet 5's planned September increase: $2/$10 remained
+# standard. Keep a constant schedule so stale cached plans cannot reinstate it.
+# Google explicitly publishes January 2027 transitions; use catalog schedules.
 #
 # Entries are (first_day, last_day_inclusive, (input, output, cache_read, src)).
 # last_day of None means "still current".
 PRICE_SCHEDULE = {
     "claude-sonnet-5": [
-        ("2000-01-01", "2026-08-31", (2.00, 10.00, 0.200, DOC)),
-        ("2026-09-01", None,         (3.00, 15.00, 0.300, DOC)),
+        ("2000-01-01", None, (2.00, 10.00, 0.200, DOC)),
     ],
 }
 PRICE_SCHEDULE["claude-sonnet-5-thinking"] = PRICE_SCHEDULE["claude-sonnet-5"]
+PRICE_SCHEDULE.update(pricing_catalog.text_price_schedules())
 
 
 def _scheduled_price(key, when):

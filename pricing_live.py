@@ -165,6 +165,7 @@ def detect_unit_multiplier(text: str) -> float | None:
 CLAUDE_CACHE_RATIO_BY_FAMILY = {
     "fable-5.1": 0.025,
     "mythos-5.1": 0.025,
+    "opus-5.5": 0.05,
 }
 
 
@@ -515,12 +516,21 @@ def parse_gemini_pricing(text: str) -> dict:
 
             rows = re.findall(r'<tr[\s\S]*?</tr>', table_str, re.IGNORECASE)
             inp, out, cache = None, None, None
+            text_compatible = True
             for r in rows:
                 cells = [re.sub(r'<[^>]+>', ' ', c).strip() for c in re.findall(r'<t[dh][\s\S]*?</t[dh]>', r, re.IGNORECASE)]
                 if len(cells) < 2:
                     continue
                 label = cells[0].lower()
                 val_cell = cells[-1]
+                # Audio-only and per-image outputs are not text token prices.
+                if 'output price' in label and (
+                    ('audio' in val_cell.lower() and 'text' not in val_cell.lower())
+                    or 'per image' in val_cell.lower() and 'text' not in val_cell.lower()
+                ):
+                    text_compatible = False
+                if 'input price' in label and 'audio' in val_cell.lower() and 'text' not in val_cell.lower():
+                    text_compatible = False
                 m_dollars = re.findall(r'\$([0-9]+(?:\.[0-9]+)?)', val_cell)
                 if not m_dollars:
                     continue
@@ -537,8 +547,8 @@ def parse_gemini_pricing(text: str) -> dict:
                 elif 'context caching' in label and cache is None:
                     cache = val
 
-            if inp is not None and out is not None:
-                cache_read = cache if cache is not None else round(inp * 0.1, 4)
+            if inp is not None and out is not None and cache is not None and text_compatible:
+                cache_read = cache
                 key = normalize_model_name(model_name)
                 if key:
                     ok, reason = validate_live_price(key, inp, out, cache_read)
@@ -565,6 +575,57 @@ def parse_openai_pricing(text: str) -> dict:
         unescaped = html.unescape(text)
         page_unit = detect_unit_multiplier(unescaped)
 
+        # Official content negotiation can return Markdown, including all
+        # service tiers. Read Standard by header names; positional parsing
+        # confuses cache writes with output and fine-tuning with base inference.
+        mode = "standard"
+        headers = None
+        fine_tuning = False
+        for line in unescaped.splitlines():
+            clean = line.strip()
+            if clean.lower() == "finetuning":
+                fine_tuning = True
+            if clean in ("Cyber models", "Multimodal models", "Specialized models"):
+                mode = "standard"
+            tier = re.fullmatch(r"(?:### )?(Standard|Batch|Flex|Fast|Ultrafast)(?: pricing data)?", clean)
+            if tier:
+                mode = tier[1].lower()
+            if not clean.startswith("|"):
+                headers = None
+                continue
+            cells = [c.strip() for c in clean.strip("|").split("|")]
+            if all(re.fullmatch(r":?-+:?", c) for c in cells):
+                continue
+            if headers is None:
+                headers = cells
+                continue
+            if mode != "standard" or fine_tuning or len(cells) != len(headers):
+                continue
+            row = dict(zip(headers, cells))
+            if "Modality" in row or row.get("Category") in ("Embedding", "Moderation"):
+                continue  # These cannot be flattened into a text-only bill.
+            name = row.get("Model", "")
+            input_cell = row.get("Short context input", row.get("Input", ""))
+            output_cell = row.get("Short context output", row.get("Output", ""))
+            cached_cell = row.get("Short context cached input", row.get("Cached input", "-"))
+            parsed_cells = [re.fullmatch(r"\$([0-9]+(?:\.[0-9]+)?)", c) for c in (input_cell, output_cell, cached_cell)]
+            if not name or not parsed_cells[0] or not parsed_cells[1]:
+                continue
+            inp, out = float(parsed_cells[0][1]), float(parsed_cells[1][1])
+            cache = float(parsed_cells[2][1]) if parsed_cells[2] else 0.0
+            if cached_cell != "-" and not parsed_cells[2]:
+                continue
+            key = normalize_model_name(name)
+            # A published '-' is unavailable caching, not an inferred 10% rate.
+            if cache == 0.0:
+                valid = 0 < inp <= out < 1000 and cached_cell == "-"
+            else:
+                valid = validate_live_price(key, inp, out, cache)[0]
+            if valid and key not in results:
+                results[key] = (inp, out, cache)
+                if "." in key:
+                    results[key.replace(".", "-")] = results[key]
+
         # 1. Parse React / Next.js hydration props
         pattern = re.compile(
             r'\[0,\s*"([^"]+?)"\]\s*,\s*'
@@ -582,7 +643,7 @@ def parse_openai_pricing(text: str) -> dict:
                 unit_mult = page_unit if page_unit is not None else 1.0
                 inp = float(m_inp) * unit_mult
                 out = float(m_out) * unit_mult
-                cache = (float(m_cached) * unit_mult) if m_cached not in ('-', '"-"') else round(inp * 0.1, 4)
+                cache = (float(m_cached) * unit_mult) if m_cached not in ('-', '"-"') else 0.0
                 key = normalize_model_name(m_name)
                 if key and key not in results:
                     ok, reason = validate_live_price(key, inp, out, cache)
@@ -599,6 +660,9 @@ def parse_openai_pricing(text: str) -> dict:
         # 2. Parse HTML tables
         tables = re.findall(r'<table[\s\S]*?</table>', unescaped, re.IGNORECASE)
         for t in tables:
+            # Multimodal and fine-tuning tables do not describe one text SKU.
+            if re.search(r'<th\b[^>]*>\s*(?:Modality|Training)\s*</th>', t, re.I):
+                continue
             table_unit = detect_unit_multiplier(t) or page_unit
             rows = re.findall(r'<tr[\s\S]*?</tr>', t, re.IGNORECASE)
             for r in rows:
@@ -1041,7 +1105,8 @@ def resolve_exact_price(
         # Dated call fallback constant
         if fallback_pricing and key in fallback_pricing:
             entry = fallback_pricing[key]
-            res = (entry[0], entry[1], entry[2], FALLBACK_CONST)
+            source = entry[3] if len(entry) > 3 and entry[3] in (EST, "doc-text-only") else FALLBACK_CONST
+            res = (entry[0], entry[1], entry[2], source)
             logger.info("[ladder hop 5] Fallback constant for %s -> %s", key, res)
             return res
         return None
@@ -1097,7 +1162,8 @@ def resolve_exact_price(
     # Hop 5: MODEL_PRICING fallback constant
     if fallback_pricing and key in fallback_pricing:
         entry = fallback_pricing[key]
-        res = (entry[0], entry[1], entry[2], FALLBACK_CONST)
+        source = entry[3] if len(entry) > 3 and entry[3] in (EST, "doc-text-only") else FALLBACK_CONST
+        res = (entry[0], entry[1], entry[2], source)
         logger.info("[ladder hop 5] Fallback constant for %s -> %s", key, res)
         return res
 
@@ -1147,7 +1213,7 @@ def resolve_price(
             return (0.0, 0.0, 0.0, DOC)
 
         # "-thinking" is a mode label, not a SKU: price it as the base model.
-        if key.endswith("-thinking"):
+        if key.startswith("claude-") and key.endswith("-thinking"):
             key = key[: -len("-thinking")]
 
         exact = resolve_exact_price(

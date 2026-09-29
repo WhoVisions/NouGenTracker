@@ -62,6 +62,35 @@ premium where available. Daily totals cannot identify those request boundaries
 or service tiers, so this tracker does not apply those multipliers to aggregated
 tokens. This table does not establish ChatGPT/Codex subscription credit limits.
 
+### Sourced model catalog
+
+The offline catalog covers **183 model records and 84 aliases**, verified on
+September 29, 2026: 110 OpenAI, 33 Claude, and 40 Google records. Sources are
+[OpenAI pricing](https://developers.openai.com/api/docs/pricing),
+[Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing), and
+[Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing), together with
+linked official model and lifecycle pages. Each record carries its source and
+verification date. Snapshot aliases that inherit a parent's price remain estimates.
+
+```bash
+python pricing_catalog.py --model gpt-6.1-sol
+python pricing_catalog.py --model gemini-3.8-flash --date 2027-01-01
+python pricing_catalog.py --model claude-opus-5-5
+```
+
+The tracker uses Standard text rates; the catalog keeps audio, image, video,
+embedding, cache writes, and storage charges in separate fields. Option-dependent
+video/music charges retain their published price rows. Long-context thresholds
+are metadata: daily aggregates cannot reconstruct request boundaries. Nine retired
+Claude 1/2/Instant IDs have no usable official rate and are explicitly unpriced;
+open-weight models retain host-dependent status. Unknown rates are never advertised
+as documented prices.
+
+Sonnet 5 remains $2/$10 per million input/output tokens because its announced
+increase was canceled. GPT-5.6 Sol is $4/$20. Published Gemini promotional rates and
+cache storage transition on January 1, 2027; dated lookups select the correct band.
+No runtime deployment or subscription allowance change is implied by this catalog.
+
 ## Forward tracking for local/free lanes (`fleet/`)
 
 Local Ollama/Gemma calls and OpenRouter/HF requests don't persist token counts anywhere,

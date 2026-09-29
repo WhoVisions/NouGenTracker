@@ -299,7 +299,7 @@ def test_token_tracker_price_for_uses_resolver():
 
     # Dated prices are respected
     assert tt.price_for("claude-sonnet-5", "2026-08-15")[:3] == (2.0, 10.0, 0.2)
-    assert tt.price_for("claude-sonnet-5", "2026-09-02")[:3] == (3.0, 15.0, 0.3)
+    assert tt.price_for("claude-sonnet-5", "2026-09-02")[:3] == (2.0, 10.0, 0.2)
 
     # Known model resolves valid price
     opus_price = tt.price_for("claude-opus-4-8")

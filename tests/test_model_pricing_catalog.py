@@ -1,0 +1,129 @@
+"""Offline catalog coverage and official pricing regressions, 2026-09-29."""
+import json
+import math
+from pathlib import Path
+
+import pytest
+
+import pricing_catalog as catalog
+import pricing_live
+import token_tracker as tracker
+
+FIXTURES = Path(__file__).with_name("fixtures")
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch, tmp_path):
+    pricing_live.reset_process_state()
+    monkeypatch.setenv("NOUGEN_PRICING_CACHE_PATH", str(tmp_path / "cache.json"))
+    pricing_live._ATTEMPTED_VENDORS.update(v for v, _ in pricing_live.VENDOR_SOURCES)
+    yield
+    pricing_live.reset_process_state()
+
+
+def test_every_openai_catalog_id_is_accounted_for():
+    expected = json.loads((FIXTURES / "openai_catalog_ids.json").read_text())
+    assert len(expected) == 101
+    assert all(catalog.lookup_model(model) is not None for model in expected)
+
+
+def test_claude_standard_table_has_exact_catalog_rows():
+    parsed = pricing_live.parse_anthropic_pricing((FIXTURES / "claude_standard_catalog.md").read_text())
+    assert len(parsed) == 32  # 18 canonical models, plus dotted spelling aliases
+    for model, rates in parsed.items():
+        record = catalog.lookup_model(model)
+        assert record is not None
+        text = record["rates"]["text"]
+        assert (text["input"], text["output"], text["cache_read"]) == rates
+
+
+@pytest.mark.parametrize("model,rates", sorted(catalog.text_prices().items()))
+def test_text_shadow_bill_uses_catalog_fallback(model, rates):
+    assert tracker.price_for(model)[:3] == rates[:3]
+
+
+def test_no_nan_negative_or_missing_provenance_in_catalog():
+    data = catalog.load_catalog()
+    assert len(data["models"]) == 183
+    assert len(data["aliases"]) == 84
+    for record in data["models"].values():
+        assert record["source_url"].startswith("https://")
+        assert record["verified_on"] == "2026-09-29"
+        for rates in record["rates"].values():
+            assert all(math.isfinite(rate) and rate >= 0 for rate in rates.values())
+
+
+def test_snapshot_inference_keeps_estimate_provenance():
+    assert catalog.lookup_model("gpt-4o-2024-08-06")["price_source"] == "est"
+    assert tracker.price_for("gpt-4o-2024-08-06")[3] == pricing_live.EST
+    # The explicit older snapshot has its own published rate, not today's rate.
+    assert tracker.price_for("gpt-4o-2024-05-13")[:3] == (5.0, 15.0, 0.0)
+
+
+def test_canceled_sonnet_increase_ignores_stale_cache():
+    pricing_live._MEMORY_CACHE["claude-sonnet-5"] = (3.0, 15.0, 0.3)
+    for day in ("2026-08-31", "2026-09-01", "2026-09-29"):
+        assert tracker.price_for("claude-sonnet-5", day)[:3] == (2.0, 10.0, 0.2)
+
+
+def test_google_published_future_transition_is_dated():
+    for model in ("gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"):
+        assert tracker.price_for(model, "2026-12-31")[:3] == (.75, 3.75, .075)
+        assert tracker.price_for(model, "2027-01-01")[:3] == (1.5, 7.5, .15)
+        assert catalog.lookup_model(model, "2026-12-31")["metered"]["cache_million_token_hours"] == .5
+        assert catalog.lookup_model(model, "2027-01-01")["metered"]["cache_million_token_hours"] == 1.0
+
+
+def test_rosalind_billing_start_is_not_backdated():
+    assert tracker.price_for("gpt-rosalind-research", "2026-09-29")[:3] == (0.0, 0.0, 0.0)
+    assert tracker.price_for("gpt-rosalind-research", "2026-10-05")[:3] == (5.0, 25.0, .5)
+
+
+def test_embedding_moderation_and_duration_keep_their_units():
+    assert tracker.price_for("text-embedding-3-small")[:3] == (.02, 0.0, 0.0)
+    assert tracker.price_for("omni-moderation-latest")[:3] == (0.0, 0.0, 0.0)
+    assert catalog.lookup_model("gpt-live-1")["metered"] == {"minutes": .05}
+    assert catalog.lookup_model("tts-1")["metered"] == {"characters_per_million": 15.0}
+    assert "gpt-live-1" not in catalog.text_prices()
+    assert "gpt-image-2" not in catalog.text_prices()
+
+
+def test_audio_image_and_text_prices_are_separate():
+    r = catalog.lookup_model("gpt-realtime-2.1")
+    assert r["rates"]["text"]["output"] == 24.0
+    assert r["rates"]["audio"]["output"] == 64.0
+    r = catalog.lookup_model("gemini-3.8-live")
+    assert r["rates"]["text"] == {"input": .75, "output": 4.5}
+    assert r["rates"]["audio"] == {"input": 3.0, "output": 12.0}
+    assert catalog.lookup_model("gemini-3.1-flash-lite")["rates"]["audio"]["input"] == .5
+
+
+def test_unpriced_legacy_is_explicit_and_not_fabricated():
+    r = catalog.lookup_model("claude-2.1")
+    assert r["billing_status"] == "unpriced"
+    assert r["rates"] == {}
+    assert catalog.lookup_model("imaginary-new-model") is None
+
+
+def test_openai_markdown_standard_pro_cache_absence_and_tier_isolation():
+    table = (FIXTURES / "openai_standard_catalog.md").read_text()
+    parsed = pricing_live.parse_openai_pricing(table)
+    assert parsed["gpt-6.1-sol"] == (2.0, 10.0, .1)
+    assert parsed["gpt-5-pro"] == (15.0, 120.0, 0.0)
+    cheaper = table.replace("### Standard pricing data", "### Batch pricing data")
+    assert pricing_live.parse_openai_pricing(cheaper) == {}
+    finetuning = "Finetuning\n" + table
+    assert pricing_live.parse_openai_pricing(finetuning) == {}
+
+
+def test_google_parser_does_not_bill_audio_output_as_text():
+    parsed = pricing_live.parse_gemini_pricing((FIXTURES / "gemini_standard_catalog.html").read_text())
+    assert "gemini-3.8-flash-tts" not in parsed
+    assert "gemini-2.5-flash-image" not in parsed
+    assert parsed["gemini-3.8-flash"] == (.75, 3.75, .075)
+
+
+def test_lookup_is_a_copy_and_has_no_mutating_side_effect():
+    r = catalog.lookup_model("gpt-6.1-sol")
+    r["rates"]["text"]["input"] = 99
+    assert catalog.lookup_model("gpt-6.1-sol")["rates"]["text"]["input"] == 2

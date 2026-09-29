@@ -35,7 +35,7 @@ def test_opus_5_is_not_billed_at_the_fallback_rate():
 
 
 def test_sonnet_5_is_priced_at_list():
-    assert tt.price_for("claude-sonnet-5")[:3] == (3.00, 15.00, 0.300)
+    assert tt.price_for("claude-sonnet-5")[:3] == (2.00, 10.00, 0.200)
 
 
 def test_cache_read_is_a_tenth_of_input_across_claude_models():
@@ -68,12 +68,12 @@ OFFICIAL = {
     "claude-opus-4-5": (5, 25, 0.5), "claude-opus-4-1": (15, 75, 1.5),
     "claude-sonnet-4-6": (3, 15, 0.3), "claude-sonnet-4-5": (3, 15, 0.3),
     "claude-haiku-4-5": (1, 5, 0.1), "claude-haiku-3-5": (0.8, 4, 0.08),
-    "gemini-3.6-flash": (1.5, 7.5, 0.15), "gemini-3.5-flash": (1.5, 9.0, 0.15),
+    "gemini-3.6-flash": (0.75, 3.75, 0.075), "gemini-3.5-flash": (1.5, 9.0, 0.15),
     "gemini-3.5-flash-lite": (0.3, 2.5, 0.03), "gemini-3.1-flash-lite": (0.25, 1.5, 0.025),
     "gemini-3.1-pro-preview": (2.0, 12.0, 0.2), "gemini-3-flash-preview": (0.5, 3.0, 0.05),
     "gemini-2.5-pro": (1.25, 10.0, 0.125), "gemini-2.5-flash": (0.3, 2.5, 0.03),
     "gemini-2.5-flash-lite": (0.1, 0.4, 0.01),
-    "gpt-5.6-sol": (5, 30, 0.5), "gpt-5.6-terra": (2, 12, 0.2), "gpt-5.6-luna": (0.2, 1.2, 0.02),
+    "gpt-5.6-sol": (4, 20, 0.4), "gpt-5.6-terra": (2, 12, 0.2), "gpt-5.6-luna": (0.2, 1.2, 0.02),
     "gpt-5.5": (5, 30, 0.5), "gpt-5.5-pro": (30, 180, 0.0), "gpt-5.4": (2.5, 15, 0.25),
     "gpt-5.4-mini": (0.75, 4.5, 0.075), "gpt-5.4-nano": (0.2, 1.25, 0.02),
     "gpt-5.4-pro": (30, 180, 0.0), "gpt-5.3-codex": (1.75, 14.0, 0.175),
@@ -102,13 +102,13 @@ def test_sonnet_5_bills_intro_rates_during_the_intro_window():
         assert tt.price_for("claude-sonnet-5", day)[:3] == (2.00, 10.00, 0.200), day
 
 
-def test_sonnet_5_bills_list_rates_the_day_the_intro_ends():
-    assert tt.price_for("claude-sonnet-5", "2026-09-01")[:3] == (3.00, 15.00, 0.300)
+def test_sonnet_5_canceled_increase_does_not_change_rates():
+    assert tt.price_for("claude-sonnet-5", "2026-09-01")[:3] == (2.00, 10.00, 0.200)
 
 
 def test_an_undated_call_falls_back_to_the_flat_table():
     """Callers that do not care about history keep the behaviour they had."""
-    assert tt.price_for("claude-sonnet-5")[:3] == (3.00, 15.00, 0.300)
+    assert tt.price_for("claude-sonnet-5")[:3] == (2.00, 10.00, 0.200)
 
 
 def test_a_date_object_works_as_well_as_a_string():
@@ -125,7 +125,7 @@ def test_model_bill_threads_the_date_through():
     bucket = {"input_tokens": 1_000_000}
     intro, _ = tt.model_bill("claude-sonnet-5", bucket, "2026-08-01")
     later, _ = tt.model_bill("claude-sonnet-5", bucket, "2026-09-01")
-    assert intro == pytest.approx(2.00) and later == pytest.approx(3.00)
+    assert intro == pytest.approx(2.00) and later == pytest.approx(2.00)
 
 
 # --- family inference for unlisted variants ------------------------------
