@@ -127,3 +127,15 @@ def test_lookup_is_a_copy_and_has_no_mutating_side_effect():
     r = catalog.lookup_model("gpt-6.1-sol")
     r["rates"]["text"]["input"] = 99
     assert catalog.lookup_model("gpt-6.1-sol")["rates"]["text"]["input"] == 2
+
+
+@pytest.mark.parametrize("day", ["garbage", "2027-1-1", "2027-02-30", "2027-01-01junk", "", 20270101])
+def test_invalid_pricing_date_is_rejected(day):
+    with pytest.raises(ValueError):
+        catalog.lookup_model("gemini-3.8-flash", day)
+
+
+def test_pricing_date_objects_select_the_same_boundary():
+    import datetime
+    for day in (datetime.date(2027, 1, 1), datetime.datetime(2027, 1, 1, 12)):
+        assert catalog.lookup_model("gemini-3.8-flash", day)["rates"]["text"]["input"] == 1.5
