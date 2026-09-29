@@ -150,3 +150,26 @@ def test_cli_requires_a_model_even_for_an_empty_date(monkeypatch, capsys, date_a
     captured = capsys.readouterr()
     assert "--date requires --model" in captured.err
     assert captured.out == ""
+
+
+@pytest.mark.parametrize("model_arg", ["", "   ", "imaginary-new-model"])
+def test_cli_invalid_model_does_not_dump_the_catalog(monkeypatch, capsys, model_arg):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--model", model_arg])
+    with pytest.raises(SystemExit) as exc:
+        catalog.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "model is not in the verified catalog" in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("date_arg", ["", "2027-02-30", "2027-01-01junk"])
+def test_cli_bad_date_reports_an_error_without_a_traceback(monkeypatch, capsys, date_arg):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--model", "gemini-3.8-flash", "--date", date_arg])
+    with pytest.raises(SystemExit) as exc:
+        catalog.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
