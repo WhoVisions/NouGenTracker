@@ -10,14 +10,14 @@
   },
   "exact": {
     "cache_creation": 943949,
-    "cache_read": 41422231,
-    "input_tokens": 509941,
-    "output_tokens": 81190,
+    "cache_read": 41802647,
+    "input_tokens": 511559,
+    "output_tokens": 81308,
     "reasoning": 280
   },
-  "generated_at": "2026-09-29T23:58:54-04:00",
+  "generated_at": "2026-09-30T03:56:09-04:00",
   "generated_by": "claude-cli",
-  "invocations": 1269,
+  "invocations": 1271,
   "machine": "blade1tb",
   "models": {
     "<synthetic>": {
@@ -57,16 +57,16 @@
     },
     "gpt-5.6-luna": {
       "cache_creation": 0,
-      "cache_read": 16586240,
-      "input_tokens": 407474,
-      "output_tokens": 5072,
+      "cache_read": 16966656,
+      "input_tokens": 409092,
+      "output_tokens": 5190,
       "reasoning": 170
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
-      "cache_hit_ratio": 0.9709,
+      "cache_hit_ratio": 0.9715,
       "distinct_sessions": 2,
       "peak_context_used_percent": 73.92,
       "plan_types": [
@@ -86,8 +86,8 @@
           "window_minutes": 10080
         }
       },
-      "total_tokens": 17532107,
-      "uncached_input_tokens": 509577
+      "total_tokens": 17914259,
+      "uncached_input_tokens": 511195
     }
   },
   "schema": 3,
@@ -174,17 +174,17 @@
     },
     "OpenAI Codex": {
       "cache_creation": 0,
-      "cache_read": 17016320,
-      "input_tokens": 509577,
-      "output_tokens": 5930,
+      "cache_read": 17396736,
+      "input_tokens": 511195,
+      "output_tokens": 6048,
       "reasoning": 280
     }
   },
   "totals": {
     "cache_creation": 943949,
-    "cache_read": 79337455,
-    "input_tokens": 1162166,
-    "output_tokens": 325872,
+    "cache_read": 79717871,
+    "input_tokens": 1163784,
+    "output_tokens": 325990,
     "reasoning": 280
   }
 }
