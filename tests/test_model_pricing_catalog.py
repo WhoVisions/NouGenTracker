@@ -1,6 +1,8 @@
 """Offline catalog coverage and official pricing regressions, 2026-09-29."""
 import json
 import math
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -139,3 +141,73 @@ def test_pricing_date_objects_select_the_same_boundary():
     import datetime
     for day in (datetime.date(2027, 1, 1), datetime.datetime(2027, 1, 1, 12)):
         assert catalog.lookup_model("gemini-3.8-flash", day)["rates"]["text"]["input"] == 1.5
+
+
+@pytest.mark.parametrize("date_arg", ["2027-01-01", ""])
+def test_cli_requires_a_model_even_for_an_empty_date(monkeypatch, capsys, date_arg):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--date", date_arg])
+    with pytest.raises(SystemExit) as exc:
+        catalog.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "--date requires --model" in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("model_arg", ["", "   ", "imaginary-new-model"])
+def test_cli_invalid_model_does_not_dump_the_catalog(monkeypatch, capsys, model_arg):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--model", model_arg])
+    with pytest.raises(SystemExit) as exc:
+        catalog.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "model is not in the verified catalog" in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("date_arg", ["", "2027-02-30", "2027-01-01junk"])
+def test_cli_bad_date_reports_an_error_without_a_traceback(monkeypatch, capsys, date_arg):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--model", "gemini-3.8-flash", "--date", date_arg])
+    with pytest.raises(SystemExit) as exc:
+        catalog.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("day,input_rate,storage_rate", [
+    ("2026-12-31", .75, .5),
+    ("2027-01-01", 1.5, 1.0),
+])
+def test_cli_valid_date_emits_only_the_requested_model(monkeypatch, capsys, day, input_rate, storage_rate):
+    monkeypatch.setattr("sys.argv", ["pricing_catalog.py", "--model", "gemini-3.8-flash", "--date", day])
+    catalog.main()
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert captured.err == ""
+    assert result["model"] == "gemini-3.8-flash"
+    assert result["rates"]["text"]["input"] == input_rate
+    assert result["metered"]["cache_million_token_hours"] == storage_rate
+    assert "models" not in result
+
+
+@pytest.mark.parametrize("date_arg,expected_status", [("2027-01-01", 0), ("2027-02-30", 2)])
+def test_standalone_cli_from_another_directory(tmp_path, date_arg, expected_status):
+    result = subprocess.run(
+        [sys.executable, str(Path(catalog.__file__).resolve()),
+         "--model", "gemini-3.8-flash", "--date", date_arg],
+        cwd=tmp_path, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == expected_status
+    if expected_status == 0:
+        record = json.loads(result.stdout)
+        assert record["rates"]["text"]["input"] == 1.5
+        assert record["metered"]["cache_million_token_hours"] == 1.0
+        assert result.stderr == ""
+    else:
+        assert result.stdout == ""
+        assert "error:" in result.stderr
+        assert "Traceback" not in result.stderr
+    assert not list(tmp_path.iterdir())  # The CLI must not write in the caller's directory.
