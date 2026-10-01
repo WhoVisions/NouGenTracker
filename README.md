@@ -283,3 +283,16 @@ commits written by hand.
 Skipping `relay check` is not free. The route-recommendations rewrite in this
 repo was written twice on two machines on the same afternoon, and one of the two
 was thrown away.
+
+<!-- nougen:fleet-role:begin (generated from nougen-handoffs fleet/manifest.json; edit the manifest, not this block) -->
+## Fleet role
+
+| | |
+|---|---|
+| Role | usage telemetry |
+| Kind | core |
+| Status | canonical |
+| Canonical for | telemetry |
+| Visibility | public |
+
+<!-- nougen:fleet-role:end -->
