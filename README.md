@@ -284,7 +284,7 @@ Skipping `relay check` is not free. The route-recommendations rewrite in this
 repo was written twice on two machines on the same afternoon, and one of the two
 was thrown away.
 
-<!-- nougen:fleet-role:begin (generated from nougen-handoffs fleet/manifest.json; edit the manifest, not this block) -->
+<!-- nougen:fleet-role:begin (generated from NouGenRelay fleet/manifest.json; edit the manifest, not this block) -->
 ## Fleet role
 
 | | |
