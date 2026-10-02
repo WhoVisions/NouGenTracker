@@ -1,0 +1,169 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-10-02",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 126787603,
+    "input_tokens": 39417,
+    "output_tokens": 22509,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 0,
+    "cache_read": 6509568,
+    "input_tokens": 163173,
+    "output_tokens": 9694,
+    "reasoning": 46576
+  },
+  "generated_at": "2026-10-02T04:40:18-04:00",
+  "generated_by": "unknown-agent",
+  "invocations": 190,
+  "machine": "phoebus",
+  "models": {
+    "<synthetic>": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 126787603,
+      "input_tokens": 39417,
+      "output_tokens": 22509,
+      "reasoning": 0
+    },
+    "gpt-6-luna": {
+      "cache_creation": 0,
+      "cache_read": 6509568,
+      "input_tokens": 163173,
+      "output_tokens": 9694,
+      "reasoning": 46576
+    }
+  },
+  "partial": true,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9755,
+      "distinct_sessions": 1,
+      "peak_context_used_percent": 81.47,
+      "plan_types": [
+        "plus"
+      ],
+      "rate_limits": {
+        "primary": {
+          "latest_used_percent": 4.0,
+          "peak_used_percent": 4.0,
+          "resets_at": 1790940060,
+          "window_minutes": 300
+        },
+        "secondary": {
+          "latest_used_percent": 77.0,
+          "peak_used_percent": 77.0,
+          "resets_at": 1791345827,
+          "window_minutes": 10080
+        }
+      },
+      "total_tokens": 6746752,
+      "uncached_input_tokens": 163173
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "050f246d087c3e03",
+    "05da079d5d5858e4",
+    "06e31e8fde738fc4",
+    "072f7b80955bd4b9",
+    "0a2582b081edd629",
+    "0a832c6c9aa793d5",
+    "0cfa3db8a69a30c6",
+    "0ee66792dddcbfbe",
+    "0f11d87765d66eb7",
+    "0f77e3c125403da4",
+    "109a99f6290dce20",
+    "147dc543005c8f3f",
+    "16d20ab99c3c95f1",
+    "187258471bb91b3c",
+    "18d4d69f481e345c",
+    "1daaff37bbb9ea2e",
+    "1db424ab209e2823",
+    "23ccef6804815f87",
+    "25a0e6159f27be1b",
+    "25bfde8e74dc3599",
+    "2722906186bdc404",
+    "280758221587755d",
+    "28b47f033dbbe767",
+    "2b48379b2377da2d",
+    "2c90fdd4f5bef5bd",
+    "2e1af2142bc41eea",
+    "2e1b75ee5db15b35",
+    "2e52b47ff5160f77",
+    "2fa3e09f79fa1ad5",
+    "2fa97c6f7fe55af6",
+    "30311ef11f297d94",
+    "3077d4f8c487c80f",
+    "34881fcb3a64155f",
+    "3570f18d18ac433b",
+    "35eb18f5b8e565ca",
+    "361bd81cf48d9c5f",
+    "3791cb7233d7945f",
+    "38dec1d6779de977",
+    "3b011260ea8b6803",
+    "3c9e35693994ae8c",
+    "3dcdc0df15517c73",
+    "3f1e2ef850eb67be",
+    "3f28d077423425bc",
+    "400bc298ddfa7623",
+    "40fd6c8011e830e0",
+    "4118bbf55b9004a6",
+    "41e1c6a5e93b8086",
+    "4394a0ba979b297e",
+    "43f0bdbf42730b81",
+    "44c34c4964b99dcb",
+    "44c8aa2c2d0d17c6",
+    "4646a402d2d2de02",
+    "467a3ebb613253b1",
+    "46ab90d635a29454",
+    "48b33594d399145c",
+    "497f2c2dae780c32",
+    "4a002266a25c0e49",
+    "4e9706df7bf848b0",
+    "50b6d407544af125",
+    "52d656334c50dc27",
+    "53c864f9d567cd49",
+    "53f6288c3c0ba6ce",
+    "5811444b6543986d",
+    "5a26417098d243a7"
+  ],
+  "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 126787603,
+      "input_tokens": 39417,
+      "output_tokens": 22509,
+      "reasoning": 0
+    },
+    "Claude Code": {
+      "cache_creation": 0,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 6509568,
+      "input_tokens": 163173,
+      "output_tokens": 9694,
+      "reasoning": 46576
+    }
+  },
+  "totals": {
+    "cache_creation": 0,
+    "cache_read": 133297171,
+    "input_tokens": 202590,
+    "output_tokens": 32203,
+    "reasoning": 46576
+  }
+}
