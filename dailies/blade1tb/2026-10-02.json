@@ -3,9 +3,9 @@
   "date": "2026-10-02",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 851723498,
-    "input_tokens": 747591,
-    "output_tokens": 339773,
+    "cache_read": 853957417,
+    "input_tokens": 837040,
+    "output_tokens": 360099,
     "reasoning": 0
   },
   "exact": {
@@ -15,9 +15,9 @@
     "output_tokens": 32880,
     "reasoning": 0
   },
-  "generated_at": "2026-10-02T20:14:34-04:00",
+  "generated_at": "2026-10-03T00:16:05-04:00",
   "generated_by": "claude-cli",
-  "invocations": 2059,
+  "invocations": 2169,
   "machine": "blade1tb",
   "models": {
     "<synthetic>": {
@@ -29,9 +29,9 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 851723498,
-      "input_tokens": 747591,
-      "output_tokens": 339773,
+      "cache_read": 853957417,
+      "input_tokens": 837040,
+      "output_tokens": 360099,
       "reasoning": 0
     },
     "gemini-m318": {
@@ -42,7 +42,7 @@
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
@@ -50,6 +50,7 @@
     "0012c27e2f61a30f",
     "0017fe99ede21534",
     "0024c0a305a3b05a",
+    "002662a5ab173009",
     "004d5e3350da7bde",
     "00a515bad92bd337",
     "00b57a1e937988d9",
@@ -63,6 +64,7 @@
     "015164188c39c9ba",
     "016848023175e1b4",
     "0191071840e85e1b",
+    "019172e4a7f48756",
     "019f013a39549eb3",
     "01da341fb7e1136f",
     "0203358701bc801e",
@@ -102,21 +104,19 @@
     "05cafdafb8fd19c4",
     "05ff9aafd0dbfc96",
     "064c6790f50ff631",
+    "065b657e8c93084b",
     "065e5690380068e6",
     "0666abd9650a119e",
     "066991d91ef81d82",
     "06ccc2ee5fbbf049",
-    "0725a58f781b0338",
-    "07418f2216c53a37",
-    "0746bc395036873f",
-    "075fb31c54267c4a"
+    "0725a58f781b0338"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 851723498,
-      "input_tokens": 747591,
-      "output_tokens": 339773,
+      "cache_read": 853957417,
+      "input_tokens": 837040,
+      "output_tokens": 360099,
       "reasoning": 0
     },
     "Antigravity (RPC)": {
@@ -136,9 +136,9 @@
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 858336780,
-    "input_tokens": 1234589,
-    "output_tokens": 372653,
+    "cache_read": 860570699,
+    "input_tokens": 1324038,
+    "output_tokens": 392979,
     "reasoning": 0
   }
 }
