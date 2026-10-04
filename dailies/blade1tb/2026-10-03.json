@@ -3,9 +3,9 @@
   "date": "2026-10-03",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 70523029,
-    "input_tokens": 64988,
-    "output_tokens": 28438,
+    "cache_read": 131844567,
+    "input_tokens": 112571,
+    "output_tokens": 57735,
     "reasoning": 0
   },
   "exact": {
@@ -15,9 +15,9 @@
     "output_tokens": 82399,
     "reasoning": 0
   },
-  "generated_at": "2026-10-03T20:06:39-04:00",
+  "generated_at": "2026-10-04T00:03:35-04:00",
   "generated_by": "claude-cli",
-  "invocations": 403,
+  "invocations": 518,
   "machine": "blade1tb",
   "models": {
     "<synthetic>": {
@@ -29,9 +29,9 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 70523029,
-      "input_tokens": 64988,
-      "output_tokens": 28438,
+      "cache_read": 131844567,
+      "input_tokens": 112571,
+      "output_tokens": 57735,
       "reasoning": 0
     },
     "gemini-m318": {
@@ -42,38 +42,52 @@
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
     "003e8acfa7018d9e",
     "00696d47239ba186",
     "00cd3eb9ff81b7ae",
+    "013a10429e1c33ca",
+    "0147b9ad69bc82cb",
     "0444c86951e4ce95",
     "04b0dc3c46e9eadd",
+    "052090c3c98b30e7",
     "05ad9b71508daf42",
     "06557e1f124735aa",
+    "06565cee846f2a28",
     "06a2325d72b47233",
     "07009f856973affb",
     "070540e2efd6e9d9",
     "076bd6bc30eee01e",
     "07a14c43672ac85f",
     "07f41593f0cfc7a3",
+    "0836fef52a0314e7",
     "085e1cf928c33cbe",
     "0931b165345a95a8",
+    "093b85d6887cdb30",
+    "09433f0bd72d1a7e",
     "0990da58e1875bd7",
+    "09ac41510a81817a",
+    "0a130e84da2d70e8",
     "0a137fcee2b8830b",
     "0a90e7ed189d952d",
     "0c0838516ad6ff30",
+    "0c6bc064c31924f6",
+    "0c9b61f421406c53",
     "0ca3b28fc25763de",
     "0cf646ae4b49009a",
+    "0de18e47c4e12543",
     "0dfc5ec97416058d",
     "0e257f7470a5434a",
     "0ef42131ab098c56",
     "0f40f309986a96b9",
     "0f4ea39058c5677f",
+    "100d4ed60166a5e9",
     "108a4bdc7ba5ff02",
     "10fa3e3620e0c0ae",
+    "1143df65dac01db0",
     "120f779a1b5a9460",
     "12bb0d1a01ba4c29",
     "12f4d6acf03304ed",
@@ -92,31 +106,17 @@
     "1a0cffd04e96db27",
     "1a0ff07dd490c73f",
     "1a2edae6b7a740d6",
+    "1a6fe3fd3f57d09e",
     "1ab224fe8344b96d",
     "1b25deec1ac0952e",
-    "1c315306ecc4332d",
-    "1c49a05bbd01a831",
-    "1d66846cb42f38fc",
-    "1ecab17d7100efaa",
-    "1ed76f85cf0f2de5",
-    "1f409e225d0a4301",
-    "1f6a0ccab1c95a71",
-    "204bc8580a299f42",
-    "2098b909a4d9afd6",
-    "2154a6e580bab287",
-    "2167b0e785879846",
-    "23eeb385d8135fe9",
-    "2561da317efb8d41",
-    "263cb4dcb158db6a",
-    "26c65084bf80870b",
-    "27115f7c726807e1"
+    "1c315306ecc4332d"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 70523029,
-      "input_tokens": 64988,
-      "output_tokens": 28438,
+      "cache_read": 131844567,
+      "input_tokens": 112571,
+      "output_tokens": 57735,
       "reasoning": 0
     },
     "Antigravity (RPC)": {
@@ -136,9 +136,9 @@
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 97697303,
-    "input_tokens": 2114428,
-    "output_tokens": 110837,
+    "cache_read": 159018841,
+    "input_tokens": 2162011,
+    "output_tokens": 140134,
     "reasoning": 0
   }
 }
