@@ -3,21 +3,21 @@
   "date": "2026-10-06",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 47888941,
-    "input_tokens": 369446,
-    "output_tokens": 79104,
+    "cache_read": 54404142,
+    "input_tokens": 406993,
+    "output_tokens": 89964,
     "reasoning": 0
   },
   "exact": {
     "cache_creation": 1472933,
-    "cache_read": 41044256,
-    "input_tokens": 462369,
-    "output_tokens": 63118,
+    "cache_read": 39947716,
+    "input_tokens": 265941,
+    "output_tokens": 47640,
     "reasoning": 0
   },
-  "generated_at": "2026-10-06T16:00:58-04:00",
+  "generated_at": "2026-10-06T20:00:10-04:00",
   "generated_by": "claude-cli",
-  "invocations": 774,
+  "invocations": 805,
   "machine": "blade1tb",
   "models": {
     "(unknown)": {
@@ -27,11 +27,18 @@
       "output_tokens": 0,
       "reasoning": 0
     },
-    "claude-opus-4-6-thinking": {
+    "<synthetic>": {
       "cache_creation": 0,
-      "cache_read": 1096540,
-      "input_tokens": 196428,
-      "output_tokens": 15478,
+      "cache_read": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning": 0
+    },
+    "claude-opus-4-6-thinking (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 518539,
+      "input_tokens": 20694,
+      "output_tokens": 6907,
       "reasoning": 0
     },
     "claude-sonnet-5-5": {
@@ -43,9 +50,9 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 47888941,
-      "input_tokens": 369446,
-      "output_tokens": 79104,
+      "cache_read": 53885603,
+      "input_tokens": 386299,
+      "output_tokens": 83057,
       "reasoning": 0
     },
     "gpt-5.6-luna": {
@@ -86,12 +93,14 @@
   "schema": 3,
   "sketch": [
     "0009da4cd99a1e96",
+    "0020e5a1488c503c",
     "00e507238a42a113",
     "018ef21be03d5f5e",
     "021a546755ae5fde",
     "0281737ecd150842",
     "029d3d99edf0c638",
     "02beca80386ade48",
+    "0318da36ebb54a6a",
     "033bed041219338e",
     "03670a8b7674650a",
     "038fabe995c6b361",
@@ -104,6 +113,7 @@
     "06f0eded6a4b849c",
     "07ae4827a600db91",
     "07cc74ea9a1241e3",
+    "07d7ce0c6957d807",
     "082ed1aa710ec4de",
     "08436274e725499a",
     "08472bf701bb752b",
@@ -114,55 +124,45 @@
     "09e1fd1be80351d3",
     "09f25dc39d30d994",
     "0a5c928012a2dd19",
+    "0b3d7ef04b73cc8f",
     "0bca8a7391d234eb",
     "0bdd163a6e515d4d",
     "0c5327e261ae77f6",
     "0cae171cc27517a2",
     "0d52eb3bebff947f",
-    "0d80c4953ed2f688",
+    "0d85380b1fc9c482",
     "0dc8b54eb5b4337f",
     "0def5395357e9775",
     "0e045a647236d7c1",
     "0e334fdba3d4031e",
     "0ec9f1a621e3e8f6",
     "0ede3a7252ac5fa5",
+    "0f2db9b6c6123b23",
     "0f473c3edf976d20",
     "0f98bb63c9d1183b",
     "0fa76234160db862",
     "0fa8dfb3e31fedff",
+    "0fb259ec9c191c82",
     "0fb266b722e47453",
     "0fbf734a233b4c70",
     "103050cd30f437d1",
     "108ce2175210d9c9",
     "11ba3084c8d1d182",
+    "1242a37f333c9fe5",
     "1262dc7f49ef07b3",
     "1291d164f62a4b65",
     "12dc564c1b75c74b",
     "14106bc15d721636",
     "1442a6f1f94150e9",
     "1494853faa89fdcb",
-    "157c69c9e4ef6926",
-    "158edc665ac639d8",
-    "163be1b2872415bc",
-    "166a39c8c7384740",
-    "16f0413319f7b09b",
-    "173f48db6e59fc70",
-    "1747e419742f61dd",
-    "1762e40fdc392ddb"
+    "157c69c9e4ef6926"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 47888941,
-      "input_tokens": 369446,
-      "output_tokens": 79104,
-      "reasoning": 0
-    },
-    "Antigravity (RPC)": {
-      "cache_creation": 0,
-      "cache_read": 1096540,
-      "input_tokens": 196428,
-      "output_tokens": 15478,
+      "cache_read": 54404142,
+      "input_tokens": 406993,
+      "output_tokens": 89964,
       "reasoning": 0
     },
     "Claude Code": {
@@ -182,9 +182,9 @@
   },
   "totals": {
     "cache_creation": 1472933,
-    "cache_read": 88933197,
-    "input_tokens": 831815,
-    "output_tokens": 142222,
+    "cache_read": 94351858,
+    "input_tokens": 672934,
+    "output_tokens": 137604,
     "reasoning": 0
   }
 }
