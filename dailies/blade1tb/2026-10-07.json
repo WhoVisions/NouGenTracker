@@ -3,8 +3,8 @@
   "date": "2026-10-07",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 14026977,
-    "input_tokens": 538376,
+    "cache_read": 13945118,
+    "input_tokens": 544376,
     "output_tokens": 119531,
     "reasoning": 0
   },
@@ -15,7 +15,7 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-10-07T23:57:28-04:00",
+  "generated_at": "2026-10-08T03:56:00-04:00",
   "generated_by": "claude-cli",
   "invocations": 819,
   "machine": "blade1tb",
@@ -29,13 +29,13 @@
     },
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 14026977,
-      "input_tokens": 538376,
+      "cache_read": 13945118,
+      "input_tokens": 544376,
       "output_tokens": 119531,
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
@@ -107,8 +107,8 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 14026977,
-      "input_tokens": 538376,
+      "cache_read": 13945118,
+      "input_tokens": 544376,
       "output_tokens": 119531,
       "reasoning": 0
     },
@@ -122,8 +122,8 @@
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 14026977,
-    "input_tokens": 538376,
+    "cache_read": 13945118,
+    "input_tokens": 544376,
     "output_tokens": 119531,
     "reasoning": 0
   }
