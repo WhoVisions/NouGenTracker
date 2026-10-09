@@ -3,8 +3,8 @@
   "date": "2026-10-08",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 66624720,
-    "input_tokens": 240600,
+    "cache_read": 63933950,
+    "input_tokens": 246600,
     "output_tokens": 108168,
     "reasoning": 0
   },
@@ -15,15 +15,15 @@
     "output_tokens": 170666,
     "reasoning": 160122
   },
-  "generated_at": "2026-10-08T23:52:26-04:00",
+  "generated_at": "2026-10-09T04:02:38-04:00",
   "generated_by": "unknown-agent",
   "invocations": 1340,
   "machine": "phoebus",
   "models": {
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 66624720,
-      "input_tokens": 240600,
+      "cache_read": 63933950,
+      "input_tokens": 246600,
       "output_tokens": 108168,
       "reasoning": 0
     },
@@ -35,7 +35,7 @@
       "reasoning": 160122
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.9751,
@@ -101,6 +101,7 @@
     "04871d28d10a0b20",
     "04a0aa2d0f63803a",
     "04d439ba87533c30",
+    "04fdd5f542abf039",
     "052f51ded6cbb6a8",
     "0560028bd945f063",
     "0560115e9bb28c7d",
@@ -111,7 +112,6 @@
     "06b7dfc93b9b34d9",
     "0700100c6446bc63",
     "072a573a1600a746",
-    "072e5a6b9d0e51b7",
     "076477226d0dbc65",
     "07811c2c2b039f6c",
     "07b00ecbb6516c97",
@@ -132,8 +132,8 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 66624720,
-      "input_tokens": 240600,
+      "cache_read": 63933950,
+      "input_tokens": 246600,
       "output_tokens": 108168,
       "reasoning": 0
     },
@@ -147,8 +147,8 @@
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 160840912,
-    "input_tokens": 2642945,
+    "cache_read": 158150142,
+    "input_tokens": 2648945,
     "output_tokens": 278834,
     "reasoning": 160122
   }
