@@ -3,9 +3,9 @@
   "date": "2026-10-09",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 57653951,
-    "input_tokens": 623580,
-    "output_tokens": 135328,
+    "cache_read": 59089715,
+    "input_tokens": 683286,
+    "output_tokens": 145933,
     "reasoning": 0
   },
   "exact": {
@@ -15,20 +15,20 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-10-09T20:28:54-04:00",
+  "generated_at": "2026-10-10T00:50:18-04:00",
   "generated_by": "claude-cli",
-  "invocations": 956,
+  "invocations": 1058,
   "machine": "blade1tb",
   "models": {
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 57653951,
-      "input_tokens": 623580,
-      "output_tokens": 135328,
+      "cache_read": 59089715,
+      "input_tokens": 683286,
+      "output_tokens": 145933,
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {},
   "schema": 3,
   "sketch": [
@@ -43,12 +43,14 @@
     "00ff14653b631e57",
     "013885f875154a42",
     "01ae1bc1667dd9d0",
+    "01d1bef93230d0e3",
     "0299e3beb093e3ca",
     "02ae0292d0cad30f",
     "02cc5e9e6bf5e479",
     "02d080f481433142",
     "02f73b2ed4dfe03e",
     "035660bc18f7df9a",
+    "03aa4a748578f0ea",
     "03cdce809a42bdf4",
     "03dfc3047f45cf3e",
     "03ebb286bea3f9d4",
@@ -56,11 +58,13 @@
     "0412cdebdf78a5d0",
     "044581ed1dd86edb",
     "0481332e63f637d7",
+    "04c868d4a7737c08",
     "04cbf38e8674d6e5",
     "04d0a319117c4eb1",
     "04fb83f79b1340a7",
     "051eab6e18192daf",
     "055251d857a7ef05",
+    "056453609e86169a",
     "05b61394c5ba04c6",
     "05d6c4b9cd682087",
     "0665dbc8cabf1385",
@@ -86,31 +90,27 @@
     "0b6f4f3d1cdd9f9d",
     "0b9a6d2ef25bcfbf",
     "0b9ee78dfb3e8eb8",
+    "0be13443f4f29f96",
     "0c11eac84061a1f2",
     "0cc5d3ff7e1ac877",
     "0cd71c3465a35f86",
-    "0d63cf0fecf8621e",
-    "0dd0a1878c6b18c3",
-    "0dedf595c7b7d467",
-    "0ebaaa191a18571a",
-    "0ec82b05328e53ab",
-    "0eeb773863010ac8",
-    "0f1c84899df10328"
+    "0cef8b25b1719837",
+    "0d63cf0fecf8621e"
   ],
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 57653951,
-      "input_tokens": 623580,
-      "output_tokens": 135328,
+      "cache_read": 59089715,
+      "input_tokens": 683286,
+      "output_tokens": 145933,
       "reasoning": 0
     }
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 57653951,
-    "input_tokens": 623580,
-    "output_tokens": 135328,
+    "cache_read": 59089715,
+    "input_tokens": 683286,
+    "output_tokens": 145933,
     "reasoning": 0
   }
 }
