@@ -765,6 +765,16 @@ def load_cache(cache_path: Path = None) -> tuple[dict, bool]:
         _MEMORY_HISTORY = history
         _MEMORY_FETCHED_AT = fetched_at_str
         return (models, is_valid)
+    except json.JSONDecodeError as e:
+        # Corrupt cache: move it aside once so every later load does not re-parse
+        # the same bad bytes, and so the next fetch regenerates a clean cache.
+        quarantine = path.with_name(path.name + ".corrupt-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+        try:
+            os.replace(path, quarantine)
+            logger.warning("Pricing cache at %s was corrupt (%s); moved to %s", path, e, quarantine)
+        except OSError as move_err:
+            logger.warning("Pricing cache at %s is corrupt (%s) and could not be moved aside: %s", path, e, move_err)
+        return ({}, False)
     except Exception as e:
         logger.warning("Failed to load pricing cache at %s: %s", path, e)
         return ({}, False)
@@ -833,9 +843,11 @@ def save_cache(
             time.sleep(0.05)
             try:
                 os.replace(tmp_path, path)
-            except OSError:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, indent=2)
+            except OSError as replace_err:
+                # Never write the live cache in place: a truncated write here is
+                # what produced the corrupt cache. Keep the last good file and the
+                # tmp copy for inspection; the next save retries the atomic replace.
+                logger.warning("Pricing cache replace failed, keeping previous cache: %s", replace_err)
                 try:
                     tmp_path.unlink(missing_ok=True)
                 except OSError:
