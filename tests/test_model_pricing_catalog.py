@@ -24,13 +24,13 @@ def offline(monkeypatch, tmp_path):
 
 
 def test_every_openai_catalog_id_is_accounted_for():
-    expected = json.loads((FIXTURES / "openai_catalog_ids.json").read_text())
+    expected = json.loads((FIXTURES / "openai_catalog_ids.json").read_text(encoding="utf-8"))
     assert len(expected) == 101
     assert all(catalog.lookup_model(model) is not None for model in expected)
 
 
 def test_claude_standard_table_has_exact_catalog_rows():
-    parsed = pricing_live.parse_anthropic_pricing((FIXTURES / "claude_standard_catalog.md").read_text())
+    parsed = pricing_live.parse_anthropic_pricing((FIXTURES / "claude_standard_catalog.md").read_text(encoding="utf-8"))
     assert len(parsed) == 32  # 18 canonical models, plus dotted spelling aliases
     for model, rates in parsed.items():
         record = catalog.lookup_model(model)
@@ -108,7 +108,7 @@ def test_unpriced_legacy_is_explicit_and_not_fabricated():
 
 
 def test_openai_markdown_standard_pro_cache_absence_and_tier_isolation():
-    table = (FIXTURES / "openai_standard_catalog.md").read_text()
+    table = (FIXTURES / "openai_standard_catalog.md").read_text(encoding="utf-8")
     parsed = pricing_live.parse_openai_pricing(table)
     assert parsed["gpt-6.1-sol"] == (2.0, 10.0, .1)
     assert parsed["gpt-5-pro"] == (15.0, 120.0, 0.0)
@@ -119,7 +119,7 @@ def test_openai_markdown_standard_pro_cache_absence_and_tier_isolation():
 
 
 def test_google_parser_does_not_bill_audio_output_as_text():
-    parsed = pricing_live.parse_gemini_pricing((FIXTURES / "gemini_standard_catalog.html").read_text())
+    parsed = pricing_live.parse_gemini_pricing((FIXTURES / "gemini_standard_catalog.html").read_text(encoding="utf-8"))
     assert "gemini-3.8-flash-tts" not in parsed
     assert "gemini-2.5-flash-image" not in parsed
     assert parsed["gemini-3.8-flash"] == (.75, 3.75, .075)
