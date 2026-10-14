@@ -15,7 +15,7 @@
     "output_tokens": 644031,
     "reasoning": 301728
   },
-  "generated_at": "2026-10-13T23:44:36-04:00",
+  "generated_at": "2026-10-14T03:52:22-04:00",
   "generated_by": "unknown-agent",
   "invocations": 1533,
   "machine": "phoebus",
@@ -35,7 +35,7 @@
       "reasoning": 301728
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.9734,
