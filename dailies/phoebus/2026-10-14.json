@@ -9,15 +9,15 @@
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 1739127,
-    "cache_read": 132335733,
-    "input_tokens": 1492692,
-    "output_tokens": 208872,
+    "cache_creation": 2115886,
+    "cache_read": 133461752,
+    "input_tokens": 1492700,
+    "output_tokens": 209099,
     "reasoning": 131537
   },
-  "generated_at": "2026-10-14T20:35:05-04:00",
+  "generated_at": "2026-10-15T00:41:38-04:00",
   "generated_by": "unknown-agent",
-  "invocations": 774,
+  "invocations": 778,
   "machine": "phoebus",
   "models": {
     "Claude Opus 5.5 (Low) (estimated)": {
@@ -28,10 +28,10 @@
       "reasoning": 0
     },
     "claude-haiku-5-5": {
-      "cache_creation": 1739127,
-      "cache_read": 76477045,
-      "input_tokens": 598,
-      "output_tokens": 131590,
+      "cache_creation": 2115886,
+      "cache_read": 77603064,
+      "input_tokens": 606,
+      "output_tokens": 131817,
       "reasoning": 0
     },
     "gpt-6-luna": {
@@ -42,7 +42,7 @@
       "reasoning": 131537
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.974,
@@ -139,10 +139,10 @@
       "reasoning": 0
     },
     "Claude Code": {
-      "cache_creation": 1739127,
-      "cache_read": 76477045,
-      "input_tokens": 598,
-      "output_tokens": 131590,
+      "cache_creation": 2115886,
+      "cache_read": 77603064,
+      "input_tokens": 606,
+      "output_tokens": 131817,
       "reasoning": 0
     },
     "OpenAI Codex": {
@@ -154,10 +154,10 @@
     }
   },
   "totals": {
-    "cache_creation": 1739127,
-    "cache_read": 133051623,
-    "input_tokens": 1513290,
-    "output_tokens": 220760,
+    "cache_creation": 2115886,
+    "cache_read": 134177642,
+    "input_tokens": 1513298,
+    "output_tokens": 220987,
     "reasoning": 131537
   }
 }
