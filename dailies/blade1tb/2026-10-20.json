@@ -10,14 +10,14 @@
   },
   "exact": {
     "cache_creation": 1743394,
-    "cache_read": 62164853,
-    "input_tokens": 458448,
-    "output_tokens": 85348,
+    "cache_read": 62616437,
+    "input_tokens": 459471,
+    "output_tokens": 85528,
     "reasoning": 43
   },
-  "generated_at": "2026-10-20T23:49:22-04:00",
+  "generated_at": "2026-10-21T03:50:26-04:00",
   "generated_by": "claude-cli",
-  "invocations": 1759,
+  "invocations": 1762,
   "machine": "blade1tb",
   "models": {
     "Gemini 4 Argon (Medium) (estimated)": {
@@ -50,16 +50,16 @@
     },
     "gpt-5.6-luna": {
       "cache_creation": 0,
-      "cache_read": 41685632,
-      "input_tokens": 94704,
-      "output_tokens": 16502,
+      "cache_read": 42137216,
+      "input_tokens": 95727,
+      "output_tokens": 16682,
       "reasoning": 7
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
-      "cache_hit_ratio": 0.9893,
+      "cache_hit_ratio": 0.9894,
       "distinct_sessions": 2,
       "peak_context_used_percent": 69.26,
       "plan_types": [
@@ -73,8 +73,8 @@
           "window_minutes": 43200
         }
       },
-      "total_tokens": 42857855,
-      "uncached_input_tokens": 458168
+      "total_tokens": 43310642,
+      "uncached_input_tokens": 459191
     }
   },
   "schema": 3,
@@ -161,17 +161,17 @@
     },
     "OpenAI Codex": {
       "cache_creation": 0,
-      "cache_read": 42382848,
-      "input_tokens": 458168,
-      "output_tokens": 16796,
+      "cache_read": 42834432,
+      "input_tokens": 459191,
+      "output_tokens": 16976,
       "reasoning": 43
     }
   },
   "totals": {
     "cache_creation": 1743394,
-    "cache_read": 119884109,
-    "input_tokens": 1195230,
-    "output_tokens": 255059,
+    "cache_read": 120335693,
+    "input_tokens": 1196253,
+    "output_tokens": 255239,
     "reasoning": 43
   }
 }
