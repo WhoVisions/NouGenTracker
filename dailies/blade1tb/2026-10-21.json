@@ -10,14 +10,14 @@
   },
   "exact": {
     "cache_creation": 686867,
-    "cache_read": 45038648,
-    "input_tokens": 93167,
-    "output_tokens": 39664,
+    "cache_read": 45339704,
+    "input_tokens": 93849,
+    "output_tokens": 39784,
     "reasoning": 0
   },
-  "generated_at": "2026-10-21T23:51:36-04:00",
+  "generated_at": "2026-10-22T03:50:10-04:00",
   "generated_by": "claude-cli",
-  "invocations": 310,
+  "invocations": 312,
   "machine": "blade1tb",
   "models": {
     "claude-haiku-5-5": {
@@ -29,13 +29,13 @@
     },
     "gpt-5.6-luna": {
       "cache_creation": 0,
-      "cache_read": 41094144,
-      "input_tokens": 93093,
-      "output_tokens": 16380,
+      "cache_read": 41395200,
+      "input_tokens": 93775,
+      "output_tokens": 16500,
       "reasoning": 0
     }
   },
-  "partial": true,
+  "partial": false,
   "provider_stats": {
     "OpenAI Codex": {
       "cache_hit_ratio": 0.9977,
@@ -45,8 +45,8 @@
         "free"
       ],
       "rate_limits": {},
-      "total_tokens": 41203617,
-      "uncached_input_tokens": 93093
+      "total_tokens": 41505475,
+      "uncached_input_tokens": 93775
     }
   },
   "schema": 3,
@@ -93,6 +93,7 @@
     "1dd23edd463192a7",
     "1dec580fab7b3f0e",
     "1edd56fadef1c448",
+    "219470aae6fd8cd8",
     "224536a0233348ce",
     "23a3a457be9f4aaf",
     "23e7ac12cf531145",
@@ -113,8 +114,7 @@
     "2d48cda2b346d53f",
     "2d56301dc44e8eb0",
     "2d8a6ca91f419486",
-    "31caf0e768d89904",
-    "338cdf5a3b470925"
+    "31caf0e768d89904"
   ],
   "sources": {
     "Claude Code": {
@@ -126,17 +126,17 @@
     },
     "OpenAI Codex": {
       "cache_creation": 0,
-      "cache_read": 41094144,
-      "input_tokens": 93093,
-      "output_tokens": 16380,
+      "cache_read": 41395200,
+      "input_tokens": 93775,
+      "output_tokens": 16500,
       "reasoning": 0
     }
   },
   "totals": {
     "cache_creation": 686867,
-    "cache_read": 45038648,
-    "input_tokens": 93167,
-    "output_tokens": 39664,
+    "cache_read": 45339704,
+    "input_tokens": 93849,
+    "output_tokens": 39784,
     "reasoning": 0
   }
 }
