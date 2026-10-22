@@ -3,28 +3,42 @@
   "date": "2026-10-22",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 0,
-    "input_tokens": 0,
-    "output_tokens": 0,
+    "cache_read": 676899,
+    "input_tokens": 47703,
+    "output_tokens": 8911,
     "reasoning": 0
   },
   "exact": {
     "cache_creation": 0,
-    "cache_read": 20622336,
-    "input_tokens": 46717,
-    "output_tokens": 8220,
+    "cache_read": 27546624,
+    "input_tokens": 62403,
+    "output_tokens": 10980,
     "reasoning": 0
   },
-  "generated_at": "2026-10-22T11:50:28-04:00",
+  "generated_at": "2026-10-22T15:48:16-04:00",
   "generated_by": "claude-cli",
-  "invocations": 137,
+  "invocations": 215,
   "machine": "blade1tb",
   "models": {
+    "Gemini 4 Argon (Medium) (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 652532,
+      "input_tokens": 39137,
+      "output_tokens": 7584,
+      "reasoning": 0
+    },
+    "gemini-3-flash-preview (estimated)": {
+      "cache_creation": 0,
+      "cache_read": 24367,
+      "input_tokens": 8566,
+      "output_tokens": 1327,
+      "reasoning": 0
+    },
     "gpt-5.6-luna": {
       "cache_creation": 0,
-      "cache_read": 20622336,
-      "input_tokens": 46717,
-      "output_tokens": 8220,
+      "cache_read": 27546624,
+      "input_tokens": 62403,
+      "output_tokens": 10980,
       "reasoning": 0
     }
   },
@@ -38,15 +52,17 @@
         "free"
       ],
       "rate_limits": {},
-      "total_tokens": 20677273,
-      "uncached_input_tokens": 46717
+      "total_tokens": 27620007,
+      "uncached_input_tokens": 62403
     }
   },
   "schema": 3,
   "sketch": [
+    "026cd3aa61aa2983",
     "0286915414de8ba7",
     "056038b287c7d8ca",
     "05db664dad92db89",
+    "06a1260b809bb222",
     "0752e65a218ba9e7",
     "0882ab61bcf0a436",
     "0a0624e788b44d23",
@@ -56,10 +72,13 @@
     "0d4cb5a721f4ad34",
     "0e36284dce480f2c",
     "102d72e4a01be449",
+    "10bf36ec59b36513",
     "10ecdd1dc865d93c",
     "1150b448eff8d87d",
     "125cc9f8a103ba41",
     "13380cb5e234078e",
+    "13541f08bc48e527",
+    "147f29aecc1a4431",
     "1655fc3a44acb22a",
     "17842dd7808cfc7b",
     "1a91bcece2d48bac",
@@ -70,7 +89,9 @@
     "227e5e5f26b79b83",
     "22bf2abed71d9265",
     "23bcbd57001751f6",
+    "24d45835d6f36443",
     "2524b7304ff0685d",
+    "27aa2fecfb4d0e18",
     "29b8ecd216d9172b",
     "2a04cd1ddc457f4c",
     "2aae94fb4e590b15",
@@ -80,49 +101,49 @@
     "2d9989ee1408701d",
     "2ecf429f11a425f4",
     "30194b371476e2e1",
+    "303bc94d1ea11694",
+    "30b2ec142ccd06cf",
     "33946c74c3af1727",
+    "36143533dc7e8862",
     "37669e5f9bbda5b6",
+    "3895f1fa4fe62cbc",
     "3978a4b21613bc6b",
+    "39e9d32b1185e283",
+    "3a42b4d43548b6a0",
     "3ace16b9c56df7b5",
     "3bab6b217364f536",
+    "3e135f17016dfe04",
     "3e45132c468dff24",
+    "3ed6639f2cc5ab3f",
     "40d19bfc9b9c5497",
     "413039c091337a24",
     "427b4d3a6ac7a543",
+    "433b5b58526bdb23",
+    "498f34d23fb82cbc",
     "4ac9c1f4dbf34a28",
-    "4dfe6d6362674a82",
-    "4e252178360ccdd7",
-    "4f2f0b6d5362974c",
-    "50ada7fa646ef423",
-    "56014cb3df04c02c",
-    "581820c37450609a",
-    "590f77dd8df2d187",
-    "5b8c352db50f899d",
-    "5c63d2aa80427cbd",
-    "5e56844595a189a2",
-    "5f0ee6c5b1545cba",
-    "5f8074a86c8ea2b3",
-    "6047c292645178b2",
-    "616293914fe0d51d",
-    "62f67434dca7f904",
-    "665a6b4aab2715a3",
-    "66e9f69774abc61c",
-    "69d164f514b7d218"
+    "4bcd7b04c734a549"
   ],
   "sources": {
+    "Antigravity (Fallback)": {
+      "cache_creation": 0,
+      "cache_read": 676899,
+      "input_tokens": 47703,
+      "output_tokens": 8911,
+      "reasoning": 0
+    },
     "OpenAI Codex": {
       "cache_creation": 0,
-      "cache_read": 20622336,
-      "input_tokens": 46717,
-      "output_tokens": 8220,
+      "cache_read": 27546624,
+      "input_tokens": 62403,
+      "output_tokens": 10980,
       "reasoning": 0
     }
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 20622336,
-    "input_tokens": 46717,
-    "output_tokens": 8220,
+    "cache_read": 28223523,
+    "input_tokens": 110106,
+    "output_tokens": 19891,
     "reasoning": 0
   }
 }
