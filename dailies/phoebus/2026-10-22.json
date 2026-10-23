@@ -3,9 +3,9 @@
   "date": "2026-10-22",
   "estimated": {
     "cache_creation": 0,
-    "cache_read": 640392088,
-    "input_tokens": 302466,
-    "output_tokens": 131736,
+    "cache_read": 653260646,
+    "input_tokens": 305385,
+    "output_tokens": 133052,
     "reasoning": 0
   },
   "exact": {
@@ -15,16 +15,16 @@
     "output_tokens": 0,
     "reasoning": 0
   },
-  "generated_at": "2026-10-22T18:34:08-04:00",
+  "generated_at": "2026-10-22T22:49:35-04:00",
   "generated_by": "claude-cli",
-  "invocations": 889,
+  "invocations": 901,
   "machine": "phoebus",
   "models": {
     "gemini-3-flash-preview (estimated)": {
       "cache_creation": 0,
-      "cache_read": 640392088,
-      "input_tokens": 302466,
-      "output_tokens": 131736,
+      "cache_read": 653260646,
+      "input_tokens": 305385,
+      "output_tokens": 133052,
       "reasoning": 0
     }
   },
@@ -100,17 +100,17 @@
   "sources": {
     "Antigravity (Fallback)": {
       "cache_creation": 0,
-      "cache_read": 640392088,
-      "input_tokens": 302466,
-      "output_tokens": 131736,
+      "cache_read": 653260646,
+      "input_tokens": 305385,
+      "output_tokens": 133052,
       "reasoning": 0
     }
   },
   "totals": {
     "cache_creation": 0,
-    "cache_read": 640392088,
-    "input_tokens": 302466,
-    "output_tokens": 131736,
+    "cache_read": 653260646,
+    "input_tokens": 305385,
+    "output_tokens": 133052,
     "reasoning": 0
   }
 }
