@@ -9,17 +9,24 @@
     "reasoning": 0
   },
   "exact": {
-    "cache_creation": 2406569,
-    "cache_read": 72552825,
-    "input_tokens": 304,
-    "output_tokens": 140673,
+    "cache_creation": 2980010,
+    "cache_read": 78786653,
+    "input_tokens": 328,
+    "output_tokens": 144943,
     "reasoning": 0
   },
-  "generated_at": "2026-10-25T19:40:22-04:00",
+  "generated_at": "2026-10-25T23:45:50-04:00",
   "generated_by": "claude-cli",
-  "invocations": 152,
+  "invocations": 164,
   "machine": "phoebus",
   "models": {
+    "claude-haiku-5-5": {
+      "cache_creation": 573441,
+      "cache_read": 6233828,
+      "input_tokens": 24,
+      "output_tokens": 4270,
+      "reasoning": 0
+    },
     "claude-opus-5-5": {
       "cache_creation": 2406569,
       "cache_read": 72552825,
@@ -34,6 +41,7 @@
   "sketch": [
     "004c007b396078d2",
     "018981c070d2d0c6",
+    "02d453c06a3a8d6b",
     "0601871db436dfc2",
     "0685ab5ed682c98d",
     "0929c2f4b4120e73",
@@ -45,6 +53,7 @@
     "122addab83c0797e",
     "12406704e61ad688",
     "135a13c9c2a30baf",
+    "153b509ab3362887",
     "15dd3b0234528395",
     "167116e540778043",
     "18c3ee57eac55763",
@@ -66,6 +75,7 @@
     "320ce60b563e78e0",
     "339f724f13af28a9",
     "34af8edb8ca7cdd1",
+    "372bfc87acf4f3ff",
     "37ad21427290f240",
     "38e7de211617553e",
     "3b5e932a983a5a2b",
@@ -78,39 +88,36 @@
     "4023f67da5680ea5",
     "4284bca65e694f1b",
     "43d95563b4f0cc4d",
+    "4846c4556c9e80d2",
     "485caf03d32f1bde",
     "4be2e3b2b80daa93",
     "4bef1d17d147da49",
     "4e164105ddb44476",
     "4ed09d1e6206764f",
     "51ff773eede4de8f",
+    "52c369f00e2f84d9",
     "54471c0064cce58c",
     "54e88afc24f22b08",
     "566de62fe20ec703",
     "56946e4903d37087",
     "577d509100e564bd",
     "5832355aff3026b6",
-    "5c4482b1e1bedee1",
-    "5df57b68f141c6e5",
-    "60d5223c502d0da6",
-    "60fc9982c7d934ea",
-    "6215e200290ceff0",
-    "68983433b68a51d8"
+    "5c4482b1e1bedee1"
   ],
   "sources": {
     "Claude Code": {
-      "cache_creation": 2406569,
-      "cache_read": 72552825,
-      "input_tokens": 304,
-      "output_tokens": 140673,
+      "cache_creation": 2980010,
+      "cache_read": 78786653,
+      "input_tokens": 328,
+      "output_tokens": 144943,
       "reasoning": 0
     }
   },
   "totals": {
-    "cache_creation": 2406569,
-    "cache_read": 72552825,
-    "input_tokens": 304,
-    "output_tokens": 140673,
+    "cache_creation": 2980010,
+    "cache_read": 78786653,
+    "input_tokens": 328,
+    "output_tokens": 144943,
     "reasoning": 0
   }
 }
