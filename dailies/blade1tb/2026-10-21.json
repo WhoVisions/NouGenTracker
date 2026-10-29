@@ -1,0 +1,142 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-10-21",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 686867,
+    "cache_read": 45339704,
+    "input_tokens": 93849,
+    "output_tokens": 39784,
+    "reasoning": 0
+  },
+  "generated_at": "2026-10-29T00:12:31-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 312,
+  "machine": "blade1tb",
+  "models": {
+    "claude-haiku-5-5": {
+      "cache_creation": 686867,
+      "cache_read": 3944504,
+      "input_tokens": 74,
+      "output_tokens": 23284,
+      "reasoning": 0
+    },
+    "gpt-6-luna": {
+      "cache_creation": 0,
+      "cache_read": 41395200,
+      "input_tokens": 93775,
+      "output_tokens": 16500,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "provider_stats": {
+    "OpenAI Codex": {
+      "cache_hit_ratio": 0.9977,
+      "distinct_sessions": 1,
+      "peak_context_used_percent": 58.39,
+      "plan_types": [
+        "free"
+      ],
+      "rate_limits": {},
+      "total_tokens": 41505475,
+      "uncached_input_tokens": 93775
+    }
+  },
+  "schema": 3,
+  "sketch": [
+    "0040317a0f9e9cef",
+    "00f493507ae461f8",
+    "04226cec85491e51",
+    "04ef63995bf71aae",
+    "06a29f65621ada10",
+    "06f0b117471a8c45",
+    "072adf9d734551cb",
+    "09c9c85d667931e9",
+    "0a017c2b4c75502a",
+    "0b6d5a43d58951ea",
+    "0be27fea6140b98d",
+    "0c4d98b8e36bfa6e",
+    "0c896f2bd3f0aef3",
+    "0c961418cb4874fa",
+    "0d1d6055c93d105e",
+    "0d499d062c7c333b",
+    "0d7d4410c7c44bc1",
+    "0e468ed69bdf3196",
+    "0e813b52268a44c1",
+    "0e934f05fcb13b65",
+    "0e9d7be1f3e5f88c",
+    "10db89d68a73b440",
+    "11b21ca8d42aed1e",
+    "139ddbdc0146158c",
+    "14dee013cf01e9c6",
+    "15d47d562f60e317",
+    "1626687d5032c63f",
+    "18f3e903653c870f",
+    "1979e80836b631ff",
+    "19c599a047af2dc0",
+    "1a02be3abbebe32c",
+    "1b41fe20bdfafeb6",
+    "202221b296fb7b10",
+    "20470fbea8401203",
+    "2178d71f6973f3ed",
+    "232f09fe0a591192",
+    "23504297c8116ea9",
+    "24f3df7c0e80f4b9",
+    "255a3448b2ba6c31",
+    "27e3610b5c9f37da",
+    "2881113935de40b6",
+    "28d1596a482a4176",
+    "2b222c293c1fa48b",
+    "2b7f329196af03b5",
+    "2b88cb74143e80eb",
+    "2bc3388c9844e230",
+    "2bc7ed288fe09b14",
+    "2bcb6dcf815bbe90",
+    "2c6f505684050c71",
+    "2cc9a8bea528cc7e",
+    "2d8a6ca91f419486",
+    "2dd2d8271c3097b9",
+    "2f67e3da2b916ce9",
+    "2f6883d33a13e29d",
+    "2f80469ccba0bc49",
+    "2fd1f9de93a4cb01",
+    "31099a9f77bcc433",
+    "316b68eb9bfb4f69",
+    "329fd3ee009e94a0",
+    "355f750d56ff9ba2",
+    "36d3fd5cc816cf1c",
+    "370daa2c4d3a7867",
+    "374411ff329ebfdc",
+    "375d0998216a465b"
+  ],
+  "sources": {
+    "Claude Code": {
+      "cache_creation": 686867,
+      "cache_read": 3944504,
+      "input_tokens": 74,
+      "output_tokens": 23284,
+      "reasoning": 0
+    },
+    "OpenAI Codex": {
+      "cache_creation": 0,
+      "cache_read": 41395200,
+      "input_tokens": 93775,
+      "output_tokens": 16500,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 686867,
+    "cache_read": 45339704,
+    "input_tokens": 93849,
+    "output_tokens": 39784,
+    "reasoning": 0
+  }
+}
