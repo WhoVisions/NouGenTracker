@@ -1,0 +1,86 @@
+{
+  "counter": "cfae0dd41682",
+  "date": "2026-10-18",
+  "estimated": {
+    "cache_creation": 0,
+    "cache_read": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning": 0
+  },
+  "exact": {
+    "cache_creation": 114940,
+    "cache_read": 3282278,
+    "input_tokens": 68,
+    "output_tokens": 17539,
+    "reasoning": 0
+  },
+  "generated_at": "2026-10-29T00:01:37-04:00",
+  "generated_by": "claude-cli",
+  "invocations": 34,
+  "machine": "blade1tb",
+  "models": {
+    "claude-haiku-5-5": {
+      "cache_creation": 114940,
+      "cache_read": 3282278,
+      "input_tokens": 68,
+      "output_tokens": 17539,
+      "reasoning": 0
+    }
+  },
+  "partial": false,
+  "provider_stats": {},
+  "schema": 3,
+  "sketch": [
+    "1cf705b413519385",
+    "1dffa0dd150fd31e",
+    "24ac0e7808bf6e4c",
+    "366277e389b352cd",
+    "49f7b9d2d3c25b8b",
+    "4a8e707dacb32786",
+    "5198a45cc824d18c",
+    "527358045ed3dd03",
+    "5434cbf7be3f72ae",
+    "56d9cb023eb36e25",
+    "5a018bd01a4b33dd",
+    "6276496141513229",
+    "6406a69637d75728",
+    "651fb112f21186c1",
+    "73d3212afaf0c221",
+    "761a4ace7151bcd9",
+    "78d14de255a5f989",
+    "834c5d9c1dd1595b",
+    "8de2e999d0b3a718",
+    "a1b468077ac1d84d",
+    "a2e1d893a8181778",
+    "a61311865bdd650b",
+    "a650c847991ae17e",
+    "a866cd91e5fa3af6",
+    "afde08fa7248fd58",
+    "bb2c85266f7373e1",
+    "c8c4818baffb93ca",
+    "d28ad40d46bcf769",
+    "da9750cca74a303e",
+    "df5aca7bf193434b",
+    "e54130cb7c5de421",
+    "ee0a653d3c5f6bf7",
+    "f5580d7b1c5f06a5",
+    "fb5b0fc9eef03f14"
+  ],
+  "sources": {
+    "Claude Code": {
+      "cache_creation": 114940,
+      "cache_read": 3282278,
+      "input_tokens": 68,
+      "output_tokens": 17539,
+      "reasoning": 0
+    }
+  },
+  "totals": {
+    "cache_creation": 114940,
+    "cache_read": 3282278,
+    "input_tokens": 68,
+    "output_tokens": 17539,
+    "reasoning": 0
+  }
+}
